@@ -57,98 +57,38 @@ const AXIS_Y = extra => Object.assign({
 const fmtInt = n => (n === null || n === undefined) ? '—' : Math.round(n).toLocaleString();
 const fmtPct = n => (n === null || n === undefined) ? '—' : `${(+n).toFixed(1)}%`;
 
-/* ---------------------------------------------------------------------- */
-/* cohort triangle (HTML table — a heatmap with readable numbers)          */
-/* ---------------------------------------------------------------------- */
-/* Interpolate opaque surface -> accent rather than alpha-blending, then pick
- * the text colour from the resulting luminance. Alpha over a dark surface
- * produces dark-on-dark cells at the low end, which is unreadable. */
-const HEAT_FROM = isDark ? [26, 31, 38] : [255, 255, 255];
-const HEAT_TO = isDark ? [96, 146, 232] : [30, 82, 186];
 
-function heatCell(v, max) {
-  if (v === null || v === undefined) return { bg: 'transparent', fg: 'inherit' };
-  const t = max > 0 ? Math.min(v / max, 1) : 0;
-  const e = Math.pow(t, 0.7);
-  const rgb = HEAT_FROM.map((from, i) => Math.round(from + (HEAT_TO[i] - from) * e));
-  const lum = (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255;
-  return { bg: `rgb(${rgb.join(',')})`, fg: lum > 0.58 ? '#0d2233' : '#eef4fc' };
-}
-const heatColor = (v, max) => heatCell(v, max).bg;
-
-function renderTriangle(elId, tri, showMonths = 19) {
-  const el = document.getElementById(elId);
-  if (!el) return;
-  if (!tri.rows.length) { el.innerHTML = '<p class="muted">No cohorts in range.</p>'; return; }
-
-  let max = 0;
-  tri.rows.forEach(r => r.cells.forEach(c => { if (c !== null && c > max) max = c; }));
-
-  const months = tri.months.slice(0, showMonths);
-  const head = ['<tr><th class="row-h">Cohort</th><th class="row-h">n</th>']
-    .concat(months.map(m => `<th>${m}m</th>`)).concat('</tr>').join('');
-
-  const body = tri.rows.map(r => {
-    const cells = months.map(m => {
-      const v = r.cells[m];
-      if (v === null || v === undefined) return '<td class="empty"></td>';
-      const { bg, fg } = heatCell(v, max);
-      return `<td style="background:${bg};color:${fg}" title="${r.cohort} · month ${m} · ${fmtPct(v)} of ${r.size}">${v.toFixed(0)}</td>`;
-    }).join('');
-    return `<tr><th class="row-h">${r.cohort}</th><td class="n">${fmtInt(r.size)}</td>${cells}</tr>`;
-  }).join('');
-
-  el.innerHTML =
-    `<table class="tri"><thead>${head}</thead><tbody>${body}</tbody></table>
-     <div class="tri-legend">
-       <span>lower</span>
-       <i style="background:${heatColor(max * 0.1, max)}"></i>
-       <i style="background:${heatColor(max * 0.35, max)}"></i>
-       <i style="background:${heatColor(max * 0.6, max)}"></i>
-       <i style="background:${heatColor(max * 0.85, max)}"></i>
-       <i style="background:${heatColor(max, max)}"></i>
-       <span>higher &nbsp;·&nbsp; blank = cohort has not reached this age yet</span>
-     </div>`;
-}
 
 /* ---------------------------------------------------------------------- */
 /* overview                                                                */
 /* ---------------------------------------------------------------------- */
-function chartIndexed(rows, atMonth) {
-  const shown = rows.filter(r => !r.partial);
-  mount('chIndexed', Object.assign(BASE(), {
-    grid: { left: 40, right: 14, top: 30, bottom: 46, containLabel: true },
-    legend: { show: false },
+
+
+/* ---------------------------------------------------------------------- */
+/* overview                                                                */
+/* ---------------------------------------------------------------------- */
+function chartCohort(rows) {
+  mount('chCohort', Object.assign(BASE(), {
+    grid: { left: 40, right: 46, top: 30, bottom: 46, containLabel: true },
+    legend: { top: 0, data: ['Customers', 'Referred'] },
     tooltip: {
       trigger: 'axis', backgroundColor: C.tooltipBg, borderColor: C.tooltipBorder, borderWidth: 1,
       textStyle: { color: C.textStrong, fontSize: 12 },
       formatter: p => {
-        const r = shown[p[0].dataIndex];
-        return `<b>${r.cohort}</b><br/>${fmtPct(r.value)} activated by month ${atMonth}<br/><span style="color:${C.text}">base ${fmtInt(r.size)}</span>`;
+        const r = rows[p[0].dataIndex];
+        return `<b>${r.cohort}</b><br/>${fmtInt(r.referrers)} of ${fmtInt(r.base)} referred` +
+               `<br/><span style="color:${C.text}">${fmtPct(r.rate)} activation</span>`;
       }
     },
-    xAxis: AXIS_X({ data: shown.map(r => r.cohort), axisLabel: { color: C.text, fontSize: 10, rotate: 55 } }),
-    yAxis: AXIS_Y({ axisLabel: { formatter: '{value}%', color: C.text, fontSize: 10 } }),
-    series: [{
-      type: 'line', smooth: true, showSymbol: shown.length < 30, symbolSize: 5,
-      data: shown.map(r => r.value),
-      lineStyle: { width: 2, color: C.accent },
-      itemStyle: { color: C.accent },
-      areaStyle: { color: isDark ? 'rgba(108,155,236,.13)' : 'rgba(59,111,212,.09)' }
-    }]
-  }));
-}
-
-function chartVolume(rows) {
-  mount('chVolume', Object.assign(BASE(), {
-    grid: { left: 40, right: 46, top: 30, bottom: 46, containLabel: true },
-    legend: { top: 0, data: ['Base', 'Referrers', 'Rate'] },
     xAxis: AXIS_X({ data: rows.map(r => r.cohort), axisLabel: { color: C.text, fontSize: 10, rotate: 55 } }),
-    yAxis: [AXIS_Y(), AXIS_Y({ axisLabel: { formatter: '{value}%', color: C.text, fontSize: 10 }, splitLine: { show: false } })],
+    yAxis: [AXIS_Y(), AXIS_Y({ max: 100, axisLabel: { formatter: '{value}%', color: C.text, fontSize: 10 }, splitLine: { show: false } })],
     series: [
-      { name: 'Base', type: 'bar', stack: 'x', data: rows.map(r => r.base - r.referrers), itemStyle: { color: C.muted, borderRadius: [0, 0, 0, 0] }, barMaxWidth: 26 },
-      { name: 'Referrers', type: 'bar', stack: 'x', data: rows.map(r => r.referrers), itemStyle: { color: C.accent, borderRadius: [3, 3, 0, 0] }, barMaxWidth: 26 },
-      { name: 'Rate', type: 'line', yAxisIndex: 1, smooth: true, symbol: 'none', data: rows.map(r => r.rate), lineStyle: { width: 2, color: C.good } }
+      { name: 'Customers', type: 'bar', stack: 'x', barMaxWidth: 24,
+        data: rows.map(r => r.base - r.referrers), itemStyle: { color: C.muted } },
+      { name: 'Referred', type: 'bar', stack: 'x', barMaxWidth: 24,
+        data: rows.map(r => r.referrers), itemStyle: { color: C.accent, borderRadius: [3, 3, 0, 0] } },
+      { name: 'Activation %', type: 'line', yAxisIndex: 1, smooth: true, symbol: 'none',
+        data: rows.map(r => r.rate), lineStyle: { width: 2, color: C.good } }
     ]
   }));
 }
@@ -156,18 +96,31 @@ function chartVolume(rows) {
 /* ---------------------------------------------------------------------- */
 /* activation source                                                       */
 /* ---------------------------------------------------------------------- */
-function chartSourceMix(mix) {
-  mount('chSourceMix', Object.assign(BASE(), {
-    grid: { left: 44, right: 16, top: 30, bottom: 52, containLabel: true },
-    xAxis: AXIS_X({ data: mix.cohorts, axisLabel: { color: C.text, fontSize: 10, rotate: 55 } }),
-    yAxis: AXIS_Y({ name: 'new referrers', nameTextStyle: { color: C.text, fontSize: 10 }, nameGap: 14 }),
-    series: SOURCES.map((s, i) => ({
-      name: s, type: 'bar', stack: 'src', data: mix.series[s],
-      itemStyle: { color: SOURCE_COLOR[s], borderRadius: i === SOURCES.length - 1 ? [3, 3, 0, 0] : 0 },
-      barMaxWidth: 28
-    }))
+function chartSource(rows) {
+  const d = rows.slice().sort((a, b) => a.referrers - b.referrers);
+  mount('chSource', Object.assign(BASE(), {
+    grid: { left: 8, right: 70, top: 14, bottom: 22, containLabel: true },
+    legend: { show: false },
+    tooltip: {
+      trigger: 'axis', backgroundColor: C.tooltipBg, borderColor: C.tooltipBorder, borderWidth: 1,
+      textStyle: { color: C.textStrong, fontSize: 12 },
+      formatter: p => {
+        const r = d[p[0].dataIndex];
+        return `<b>${r.source}</b><br/>${fmtInt(r.referrers)} referrers (${fmtPct(r.share)})` +
+               `<br/><span style="color:${C.text}">${fmtInt(r.referrals)} referrals</span>`;
+      }
+    },
+    xAxis: AXIS_Y({ axisLabel: { show: false }, splitLine: { show: false } }),
+    yAxis: AXIS_X({ data: d.map(r => r.source), axisLabel: { color: C.text, fontSize: 11 } }),
+    series: [{
+      type: 'bar', data: d.map(r => r.referrers), barMaxWidth: 22,
+      itemStyle: { color: p => SOURCE_COLOR[d[p.dataIndex].source] || FALLBACK_COLOR, borderRadius: [0, 3, 3, 0] },
+      label: { show: true, position: 'right', color: C.text, fontSize: 10,
+               formatter: p => `${fmtInt(p.value)}  (${fmtPct(d[p.dataIndex].share)})` }
+    }]
   }));
 }
+
 
 function chartSourceShare(mix) {
   const totals = mix.cohorts.map((_, i) =>
@@ -194,63 +147,7 @@ function chartSourceShare(mix) {
 /* ---------------------------------------------------------------------- */
 /* geography                                                               */
 /* ---------------------------------------------------------------------- */
-function chartState(rows, avg) {
-  const d = rows.slice().sort((a, b) => a.rate - b.rate);
-  mount('chState', Object.assign(BASE(), {
-    grid: { left: 8, right: 56, top: 16, bottom: 24, containLabel: true },
-    legend: { show: false },
-    tooltip: {
-      trigger: 'axis', backgroundColor: C.tooltipBg, borderColor: C.tooltipBorder, borderWidth: 1,
-      textStyle: { color: C.textStrong, fontSize: 12 },
-      formatter: p => {
-        const r = d[p[0].dataIndex];
-        return `<b>${r.key}</b><br/>${fmtPct(r.rate)} activated<br/><span style="color:${C.text}">${fmtInt(r.referrers)} of ${fmtInt(r.base)}</span>`;
-      }
-    },
-    xAxis: AXIS_Y({ axisLabel: { formatter: '{value}%', color: C.text, fontSize: 10 } }),
-    yAxis: AXIS_X({ data: d.map(r => r.key), axisLabel: { color: C.text, fontSize: 11 } }),
-    series: [{
-      type: 'bar', data: d.map(r => r.rate), barMaxWidth: 18,
-      itemStyle: { color: p => d[p.dataIndex].rate >= avg ? C.accent : C.muted, borderRadius: [0, 3, 3, 0] },
-      label: { show: true, position: 'right', color: C.text, fontSize: 10, formatter: p => `${fmtPct(p.value)}  (n=${fmtInt(d[p.dataIndex].base)})` },
-      markLine: {
-        silent: true, symbol: 'none',
-        lineStyle: { color: C.good, type: 'dashed', width: 1 },
-        label: { formatter: `avg ${fmtPct(avg)}`, color: C.good, fontSize: 10, position: 'end' },
-        data: [{ xAxis: avg }]
-      }
-    }]
-  }));
-}
 
-function chartBranchScatter(rows, avg) {
-  mount('chBranchScatter', Object.assign(BASE(), {
-    grid: { left: 46, right: 20, top: 24, bottom: 40, containLabel: true },
-    legend: { show: false },
-    tooltip: {
-      trigger: 'item', backgroundColor: C.tooltipBg, borderColor: C.tooltipBorder, borderWidth: 1,
-      textStyle: { color: C.textStrong, fontSize: 12 },
-      formatter: p => `<b>${p.data[2]}</b><br/>base ${fmtInt(p.data[0])}<br/>${fmtPct(p.data[1])} activated<br/><span style="color:${C.text}">${fmtInt(p.data[3])} untapped</span>`
-    },
-    xAxis: AXIS_Y({ name: 'base size', nameLocation: 'middle', nameGap: 26, nameTextStyle: { color: C.text, fontSize: 10 } }),
-    yAxis: AXIS_Y({ name: 'activation %', nameTextStyle: { color: C.text, fontSize: 10 }, axisLabel: { formatter: '{value}%', color: C.text, fontSize: 10 } }),
-    series: [{
-      type: 'scatter',
-      symbolSize: d => Math.max(6, Math.min(30, Math.sqrt(d[3]) * 1.7)),
-      data: rows.map(r => [r.base, r.rate, r.key, r.base - r.referrers]),
-      itemStyle: {
-        color: p => p.data[1] >= avg ? 'rgba(59,111,212,.62)' : 'rgba(212,80,107,.62)',
-        borderColor: isDark ? 'rgba(255,255,255,.18)' : 'rgba(0,0,0,.10)'
-      },
-      markLine: {
-        silent: true, symbol: 'none',
-        lineStyle: { color: C.good, type: 'dashed', width: 1 },
-        label: { formatter: `avg ${fmtPct(avg)}`, color: C.good, fontSize: 10 },
-        data: [{ yAxis: avg }]
-      }
-    }]
-  }));
-}
 
 /* ---------------------------------------------------------------------- */
 /* timing                                                                  */
@@ -272,40 +169,7 @@ function chartTiming(rows) {
   }));
 }
 
-function chartPrePost(rows) {
-  mount('chPrePost', Object.assign(BASE(), {
-    grid: { left: 40, right: 16, top: 30, bottom: 40, containLabel: true },
-    legend: { top: 0 },
-    tooltip: { trigger: 'axis', backgroundColor: C.tooltipBg, borderColor: C.tooltipBorder, borderWidth: 1, textStyle: { color: C.textStrong, fontSize: 12 } },
-    xAxis: AXIS_X({ data: rows.map(r => `${r.group}\n(n=${fmtInt(r.n)})`), axisLabel: { color: C.text, fontSize: 10, lineHeight: 14 } }),
-    yAxis: AXIS_Y(),
-    series: [
-      { name: 'Avg referrals each', type: 'bar', data: rows.map(r => r.avgReferrals), barMaxWidth: 40, itemStyle: { color: C.accent, borderRadius: [3, 3, 0, 0] } },
-      { name: 'Repeat rate %', type: 'bar', data: rows.map(r => r.repeatRate), barMaxWidth: 40, itemStyle: { color: '#8b5cf6', borderRadius: [3, 3, 0, 0] } },
-      { name: 'Referral conversion %', type: 'bar', data: rows.map(r => r.convRate), barMaxWidth: 40, itemStyle: { color: '#17a2a2', borderRadius: [3, 3, 0, 0] } }
-    ]
-  }));
-}
 
-function chartSpeed(rows) {
-  mount('chSpeed', Object.assign(BASE(), {
-    legend: { show: false },
-    tooltip: {
-      trigger: 'axis', backgroundColor: C.tooltipBg, borderColor: C.tooltipBorder, borderWidth: 1,
-      textStyle: { color: C.textStrong, fontSize: 12 },
-      formatter: p => {
-        const r = rows[p[0].dataIndex];
-        return `<b>${r.cohort}</b><br/>median ${fmtInt(r.median)} days to first referral<br/><span style="color:${C.text}">${fmtInt(r.n)} referrers</span>`;
-      }
-    },
-    xAxis: AXIS_X({ data: rows.map(r => r.cohort), axisLabel: { color: C.text, fontSize: 10, rotate: 55 } }),
-    yAxis: AXIS_Y({ name: 'days', nameTextStyle: { color: C.text, fontSize: 10 } }),
-    series: [{
-      type: 'line', smooth: true, symbolSize: 5, data: rows.map(r => r.median),
-      lineStyle: { width: 2, color: '#8b5cf6' }, itemStyle: { color: '#8b5cf6' }
-    }]
-  }));
-}
 
 /* ---------------------------------------------------------------------- */
 /* trajectory                                                              */
@@ -331,37 +195,7 @@ function chartDepth(rows) {
   }));
 }
 
-function chartVelocity(rows) {
-  mount('chVelocity', Object.assign(BASE(), {
-    grid: { left: 40, right: 44, top: 30, bottom: 34, containLabel: true },
-    legend: { top: 0 },
-    xAxis: AXIS_X({ data: rows.map(r => r.label), name: 'time on base', nameLocation: 'middle', nameGap: 24, nameTextStyle: { color: C.text, fontSize: 10 } }),
-    yAxis: [AXIS_Y(), AXIS_Y({ axisLabel: { formatter: '{value}%', color: C.text, fontSize: 10 }, splitLine: { show: false } })],
-    series: [
-      { name: 'Referrals per referrer', type: 'bar', data: rows.map(r => r.perReferrer), barMaxWidth: 30, itemStyle: { color: C.accent, borderRadius: [3, 3, 0, 0] } },
-      { name: 'Referrals per customer', type: 'bar', data: rows.map(r => r.perCustomer), barMaxWidth: 30, itemStyle: { color: '#8b5cf6', borderRadius: [3, 3, 0, 0] } },
-      { name: 'Activation rate', type: 'line', yAxisIndex: 1, smooth: true, symbol: 'circle', symbolSize: 5, data: rows.map(r => r.rate), lineStyle: { width: 2, color: C.good }, itemStyle: { color: C.good } }
-    ]
-  }));
-}
 
-function chartDurability(rows) {
-  mount('chDurability', Object.assign(BASE(), {
-    grid: { left: 60, right: 20, top: 30, bottom: 30, containLabel: true },
-    legend: { top: 0 },
-    tooltip: {
-      trigger: 'axis', backgroundColor: C.tooltipBg, borderColor: C.tooltipBorder, borderWidth: 1,
-      textStyle: { color: C.textStrong, fontSize: 12 }, valueFormatter: v => fmtPct(v)
-    },
-    xAxis: AXIS_Y({ max: 100, axisLabel: { formatter: '{value}%', color: C.text, fontSize: 10 } }),
-    yAxis: AXIS_X({ data: rows.map(r => r.source), axisLabel: { color: C.text, fontSize: 11 } }),
-    series: [
-      { name: 'One and done', type: 'bar', stack: 'd', data: rows.map(r => +(100 * r.one / r.total).toFixed(1)), itemStyle: { color: C.muted, borderRadius: [3, 0, 0, 3] } },
-      { name: 'Gave 2', type: 'bar', stack: 'd', data: rows.map(r => +(100 * r.two / r.total).toFixed(1)), itemStyle: { color: '#8b5cf6' } },
-      { name: 'Gave 3+', type: 'bar', stack: 'd', data: rows.map(r => +(100 * r.three / r.total).toFixed(1)), itemStyle: { color: C.accent, borderRadius: [0, 3, 3, 0] } }
-    ]
-  }));
-}
 
 /* ---------------------------------------------------------------------- */
 /* coverage gap                                                            */

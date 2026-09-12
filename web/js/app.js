@@ -3,16 +3,16 @@
 
 const F = {
   cohortFrom: null, cohortTo: null,
-  state: new Set(), branch: new Set(), channel: new Set(), capacity: new Set(),
+  state: new Set(), branch: new Set(), capacity: new Set(),
   maturityMin: 0
 };
 let activeTab = 'overview';
-let INDEXED_AT = 6;   // months of maturity used for fair cohort comparison
 
 /* ---------------------------------------------------------------------- */
 function buildChips(elId, col, set) {
   const el = document.getElementById(elId);
-  if (!el || !DS.has(col)) { if (el) el.closest('.filter').hidden = true; return; }
+  if (!el) return;
+  if (!DS.has(col)) { el.closest('.filter').hidden = true; return; }
   el.innerHTML = '';
   DS.levels(col).forEach(level => {
     const chip = document.createElement('span');
@@ -25,7 +25,9 @@ function buildChips(elId, col, set) {
       render();
     };
     chip.addEventListener('click', toggle);
-    chip.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+    chip.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+    });
     el.appendChild(chip);
   });
 }
@@ -34,10 +36,7 @@ function buildFilters() {
   const cohorts = DS.levels('cohort_month').slice().sort();
   const from = document.getElementById('fCohortFrom');
   const to = document.getElementById('fCohortTo');
-  cohorts.forEach(c => {
-    from.add(new Option(c, c));
-    to.add(new Option(c, c));
-  });
+  cohorts.forEach(c => { from.add(new Option(c, c)); to.add(new Option(c, c)); });
   F.cohortFrom = cohorts[0];
   F.cohortTo = cohorts[cohorts.length - 1];
   from.value = F.cohortFrom;
@@ -47,7 +46,6 @@ function buildFilters() {
 
   buildChips('fState', 'state', F.state);
   buildChips('fBranch', 'branch', F.branch);
-  buildChips('fChannel', 'acquisition_channel', F.channel);
   buildChips('fCapacity', 'capacity_band', F.capacity);
 
   document.getElementById('fMaturity').addEventListener('change', e => {
@@ -56,9 +54,12 @@ function buildFilters() {
   });
 
   document.getElementById('resetFilters').addEventListener('click', () => {
-    [F.state, F.branch, F.channel, F.capacity].forEach(s => s.clear());
-    F.cohortFrom = cohorts[0]; F.cohortTo = cohorts[cohorts.length - 1]; F.maturityMin = 0;
-    from.value = F.cohortFrom; to.value = F.cohortTo;
+    [F.state, F.branch, F.capacity].forEach(s => s.clear());
+    F.cohortFrom = cohorts[0];
+    F.cohortTo = cohorts[cohorts.length - 1];
+    F.maturityMin = 0;
+    from.value = F.cohortFrom;
+    to.value = F.cohortTo;
     document.getElementById('fMaturity').value = '0';
     document.querySelectorAll('.chip.on').forEach(c => c.classList.remove('on'));
     render();
@@ -69,7 +70,9 @@ function buildFilters() {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
       activeTab = tab.dataset.tab;
-      document.querySelectorAll('.panel').forEach(p => { p.hidden = p.dataset.panel !== activeTab; });
+      document.querySelectorAll('.panel').forEach(p => {
+        p.hidden = p.dataset.panel !== activeTab;
+      });
       render();
     });
   });
@@ -82,86 +85,67 @@ function kpi(label, value, note) {
           <div class="k-note">${note || '&nbsp;'}</div></div>`;
 }
 
-function renderKPIs(s) {
-  const crore = v => v >= 1e7 ? `₹${(v / 1e7).toFixed(1)} Cr` : `₹${(v / 1e5).toFixed(1)} L`;
+function renderKPIs(s, split) {
   document.getElementById('kpis').innerHTML = [
-    kpi('Customer base', fmtInt(s.customers), `${fmtInt(s.installs)} installations`),
-    kpi('Became referrers', fmtInt(s.referrers), `${fmtPct(s.rate)} of the base`),
+    kpi('Customers', fmtInt(s.customers), 'commissioned in range'),
+    kpi('Referred at least once', fmtInt(s.referrers), `${fmtPct(s.rate)} of the base`),
+    kpi('Never referred', fmtInt(s.customers - s.referrers), `${fmtPct(100 - s.rate)} of the base`),
     kpi('Referrals given', fmtInt(s.referrals), `${s.perReferrer} per referrer`),
-    kpi('Referrals converted', fmtInt(s.converted), `${fmtPct(s.convRate)} of referrals`),
-    kpi('Median time to refer', s.medianDays === null ? '—' : `${fmtInt(s.medianDays)}d`, 'after installation'),
-    kpi('Referred pre-install', fmtInt(s.pre), s.referrers ? `${fmtPct(100 * s.pre / s.referrers)} of referrers` : ''),
-    kpi('Never referred', fmtInt(s.customers - s.referrers), `${fmtPct(100 - s.rate)} of the base`)
+    kpi('Became orders', fmtInt(s.converted), `${fmtPct(s.convRate)} of referrals`),
+    kpi('Referred before commissioning', fmtPct(split.prePct), `${fmtInt(split.pre)} of ${fmtInt(split.total)} referrers`)
   ].join('');
 }
 
 /* ---------------------------------------------------------------------- */
 const PANELS = {
   overview(idx, s) {
-    renderTriangle('triangle', AGG.triangle(idx));
-    chartIndexed(AGG.indexedRate(idx, INDEXED_AT), INDEXED_AT);
-    chartVolume(AGG.volumeByCohort(idx));
+    const timing = AGG.timingHistogram(idx);
+    chartTiming(timing);
+
+    const split = AGG.preInstallSplit(idx);
+    const peak = timing.reduce((a, b) => (b.count > a.count ? b : a), timing[0] || { label: '—', pct: 0 });
+    document.getElementById('timingFinding').innerHTML = peak.count
+      ? `<strong>${fmtPct(split.prePct)}</strong> of referrers refer before their own system is
+         commissioned. The single biggest month is <strong>${peak.label}</strong>
+         (${fmtPct(peak.pct)} of all first referrals) &mdash; the window that matters is the
+         sale and installation period, not the months after handover.`
+      : '';
+
+    chartCohort(AGG.volumeByCohort(idx));
+    chartDepth(AGG.depth(idx, 6));
   },
 
   activation(idx, s) {
-    const mix = AGG.sourceMixByCohort(idx);
-    chartSourceMix(mix);
-    chartSourceShare(mix);
+    const stats = AGG.sourceStats(idx);
+    chartSource(stats);
+    chartSourceShare(AGG.sourceMixByCohort(idx));
     renderTable('tblSource', [
-      { key: 'source', label: 'Activated by', fmt: v => `<span style="color:${SOURCE_COLOR[v]};font-weight:600">●</span> ${v}` },
+      { key: 'source', label: 'Activated by',
+        fmt: v => `<span style="color:${SOURCE_COLOR[v] || '#94a3b8'};font-weight:700">&#9679;</span> ${v}` },
       { key: 'referrers', label: 'Referrers', num: true, bar: true },
       { key: 'share', label: 'Share', num: true, pct: true },
-      { key: 'avgReferrals', label: 'Avg refs', num: true, fmt: v => v.toFixed(2) },
-      { key: 'repeatRate', label: 'Repeat', num: true, pct: true },
-      { key: 'convRate', label: 'Lead→install', num: true, pct: true },
-      { key: 'medianDays', label: 'Median days', num: true }
-    ], AGG.sourceStats(idx), { sortKey: 'referrers' });
-  },
-
-  geography(idx, s) {
-    chartState(AGG.byDimension(idx, 'state', 20), s.rate);
-    const branches = AGG.byDimension(idx, 'branch', 15);
-    chartBranchScatter(branches, s.rate);
-    renderTable('tblBranch', [
-      { key: 'key', label: 'Branch' },
-      { key: 'base', label: 'Base', num: true, bar: true },
-      { key: 'referrers', label: 'Referrers', num: true },
-      { key: 'rate', label: 'Activation', num: true, pct: true },
-      { key: 'vsAvg', label: 'vs avg', num: true, signed: true, fmt: v => `${v > 0 ? '+' : ''}${v.toFixed(1)} pt` },
-      { key: 'untapped', label: 'Untapped', num: true },
-      { key: 'perCustomer', label: 'Refs/customer', num: true, fmt: v => v.toFixed(2) }
-    ], branches.map(b => ({ ...b, vsAvg: +(b.rate - s.rate).toFixed(2), untapped: b.base - b.referrers })),
-       { sortKey: 'base' });
-  },
-
-  timing(idx, s) {
-    chartTiming(AGG.timingHistogram(idx));
-    chartPrePost(AGG.prePost(idx));
-    chartSpeed(AGG.speedByCohort(idx));
-  },
-
-  trajectory(idx, s) {
-    chartDepth(AGG.depth(idx));
-    chartVelocity(AGG.velocityByMaturity(idx));
-    chartDurability(AGG.durabilityBySource(idx));
+      { key: 'referrals', label: 'Referrals', num: true },
+      { key: 'avgReferrals', label: 'Each gave', num: true, fmt: v => v.toFixed(2) },
+      { key: 'repeatRate', label: 'Refers again', num: true, pct: true },
+      { key: 'convRate', label: 'Became orders', num: true, pct: true }
+    ], stats, { sortKey: 'referrers' });
   },
 
   coverage(idx, s) {
     chartGap(AGG.gapByCohort(idx));
-    renderTable('tblGap', [
-      { key: 'key', label: 'Branch' },
-      { key: 'untapped', label: 'Untapped', num: true, bar: true },
-      { key: 'base', label: 'Mature base', num: true },
-      { key: 'rate', label: 'Activation', num: true, pct: true }
-    ], AGG.gapSegments(idx, ['branch']), { sortKey: 'untapped' });
-
-    renderTable('tblPriority', [
-      { key: 'key', label: 'State · acquisition' },
-      { key: 'headroom', label: 'Headroom', num: true, bar: true },
-      { key: 'untapped', label: 'Untapped', num: true },
-      { key: 'rate', label: 'Peer rate', num: true, pct: true },
-      { key: 'vsAvg', label: 'vs avg', num: true, signed: true, fmt: v => `${v > 0 ? '+' : ''}${v.toFixed(1)} pt` }
-    ], AGG.prioritySegments(idx, ['state', 'acquisition_channel']), { sortKey: 'headroom' });
+    const cols = [
+      { key: 'key', label: 'Name' },
+      { key: 'untapped', label: 'Never referred', num: true, bar: true },
+      { key: 'base', label: 'Customers', num: true },
+      { key: 'rate', label: 'Activation', num: true, pct: true },
+      { key: 'vsAvg', label: 'vs avg', num: true, signed: true,
+        fmt: v => `${v > 0 ? '+' : ''}${v.toFixed(1)} pt` }
+    ];
+    const decorate = rows => rows.map(r => ({
+      ...r, untapped: r.base - r.referrers, vsAvg: +(r.rate - s.rate).toFixed(2)
+    }));
+    renderTable('tblState', cols, decorate(AGG.byDimension(idx, 'state', 20)), { sortKey: 'untapped' });
+    renderTable('tblBranch', cols, decorate(AGG.byDimension(idx, 'branch', 20)), { sortKey: 'untapped' });
   }
 };
 
@@ -175,8 +159,8 @@ function setEmptyState(panel, empty) {
     box = document.createElement('div');
     box.className = 'empty-state';
     box.innerHTML = 'No customers match these filters.<br>' +
-      '<span>Widen the cohort range or clear a chip &mdash; some combinations, ' +
-      'like a state paired with another state’s branch, cannot overlap.</span>';
+      '<span>Widen the month range or clear a chip &mdash; some combinations, ' +
+      'like a state paired with another state&rsquo;s cluster, cannot overlap.</span>';
     panel.appendChild(box);
   }
 }
@@ -184,12 +168,13 @@ function setEmptyState(panel, empty) {
 function render() {
   const idx = applyFilters(F);
   const s = AGG.summary(idx);
-  renderKPIs(s);
+  renderKPIs(s, AGG.preInstallSplit(idx));
   const panel = document.querySelector(`.panel[data-panel="${activeTab}"]`);
   setEmptyState(panel, idx.length === 0);
   if (idx.length) PANELS[activeTab](idx, s);
   document.getElementById('footMeta').textContent =
-    `${fmtInt(idx.length)} of ${fmtInt(DS.n)} customers in view · generated ${DS.meta.generated_at || '—'} · data as of ${DS.meta.as_of || '—'}`;
+    `${fmtInt(idx.length)} of ${fmtInt(DS.n)} customers in view · ` +
+    `refreshed ${(DS.meta.generated_at || '').replace('T', ' ')}`;
   requestAnimationFrame(resizeAll);
 }
 
@@ -200,12 +185,12 @@ loadData().then(() => {
   badge.textContent = sample ? 'Sample data' : (DS.meta.mode === 'gated' ? 'Row-level' : 'Aggregate');
   badge.classList.toggle('sample', sample);
   document.getElementById('asOf').textContent =
-    `${DS.meta.lookback_months || '?'}-month window · as of ${DS.meta.as_of || '—'}`;
+    `${DS.meta.lookback_months || '?'} months to ${DS.meta.as_of || '—'}`;
 
   const warn = [];
   if (sample) warn.push('Synthetic data — not real numbers.');
   if (DS.meta.unmapped_source_count) {
-    warn.push(`${DS.meta.unmapped_source_count} unmapped activation source value(s) fell into "Others" — see etl/source_map.json.`);
+    warn.push(`${DS.meta.unmapped_source_count} unrecognised activation value(s) counted as Others.`);
   }
   document.getElementById('footWarn').textContent = warn.join(' ');
 
@@ -235,5 +220,5 @@ loadData().then(() => {
     `If you are opening index.html directly from disk, fetch() is blocked by the browser.\n` +
     `Serve it over HTTP instead:\n\n    python -m http.server 8000 --directory web\n\n` +
     `then open http://localhost:8000\n\n` +
-    `If data/customers.json is missing, build it first:\n\n    python etl/build.py --sample`;
+    `If data/customers.json is missing, build it first:\n\n    python etl/build.py`;
 });

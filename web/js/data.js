@@ -7,15 +7,20 @@
  */
 'use strict';
 
-const SOURCES = ['Sales', 'Online', 'BTL', 'CApp', 'Ops/AMC', 'Others'];
+/* Populated from meta.json at load time so the bucket list always matches
+ * etl/source_map.json -- the buckets are derived from the warehouse's own
+ * values, not a fixed guess. */
+let SOURCES = ['Sales', 'Ops/AMC', 'BTL', 'Customer direct', 'Others'];
 const SOURCE_COLOR = {
   'Sales': '#3b6fd4',
-  'Online': '#17a2a2',
-  'BTL': '#e0862c',
-  'CApp': '#8b5cf6',
   'Ops/AMC': '#d4506b',
+  'BTL': '#e0862c',
+  'Customer direct': '#17a2a2',
+  'Partner (SPP)': '#8b5cf6',
+  'Employee (SSE)': '#6366f1',
   'Others': '#94a3b8'
 };
+const FALLBACK_COLOR = '#94a3b8';
 
 const DS = {
   n: 0,
@@ -48,6 +53,10 @@ async function loadData() {
   DS.n = customers.n;
   DS.cols = customers.columns;
   DS.meta = meta;
+  if (Array.isArray(meta.canonical_sources) && meta.canonical_sources.length) {
+    SOURCES = meta.canonical_sources;
+    SOURCES.forEach(s => { if (!SOURCE_COLOR[s]) SOURCE_COLOR[s] = FALLBACK_COLOR; });
+  }
   return DS;
 }
 
@@ -259,22 +268,54 @@ const AGG = {
     return out.sort((a, b) => b.base - a.base);
   },
 
+  /** Distribution of first-referral timing, relative to commissioning.
+   *
+   * Most referrals land within a couple of months either side of
+   * commissioning, so the months near zero are kept as individual bars and
+   * only the thin tails are grouped. Lumping all pre-install referrals into
+   * one bucket would hide the shape, which is the whole point of the chart.
+   */
   timingHistogram(idx) {
     const mtf = DS.cols.months_to_first_referral.v;
-    const buckets = new Map();
+    const BINS = [
+      { key: -99, label: '7m+ before', test: m => m <= -7, pre: true },
+      ...[-6, -5, -4, -3, -2, -1].map(m => ({ key: m, label: `${-m}m before`, test: x => x === m, pre: true })),
+      { key: 0, label: 'same month', test: m => m === 0, pre: false },
+      ...[1, 2, 3, 4, 5, 6].map(m => ({ key: m, label: `${m}m after`, test: x => x === m, pre: false })),
+      { key: 90, label: '7-12m after', test: m => m >= 7 && m <= 12, pre: false },
+      { key: 91, label: '13-24m after', test: m => m >= 13 && m <= 24, pre: false },
+      { key: 92, label: '24m+ after', test: m => m > 24, pre: false }
+    ];
+    const counts = BINS.map(() => 0);
+    let total = 0;
     for (const i of idx) {
       const m = mtf[i];
       if (m === null || m === undefined) continue;
-      const key = m < 0 ? -1 : (m > 24 ? 25 : m);
-      buckets.set(key, (buckets.get(key) || 0) + 1);
+      total++;
+      for (let b = 0; b < BINS.length; b++) {
+        if (BINS[b].test(m)) { counts[b]++; break; }
+      }
     }
-    const keys = [...buckets.keys()].sort((a, b) => a - b);
-    return keys.map(k => ({
-      key: k,
-      label: k === -1 ? 'before install' : (k === 25 ? '24m+' : `${k}m`),
-      count: buckets.get(k),
-      pre: k === -1
-    }));
+    return BINS.map((b, n) => ({
+      key: b.key, label: b.label, count: counts[n], pre: b.pre,
+      pct: pct(counts[n], total)
+    })).filter(b => b.count > 0);
+  },
+
+  /** Pre- vs post-commissioning split, measured in DAYS.
+   *
+   * Not the same as counting negative month buckets: a referral 13 days before
+   * commissioning in the same calendar month is "before" by days but lands in
+   * the "same month" bar. Days is the honest number for the headline.
+   */
+  preInstallSplit(idx) {
+    const isRef = DS.cols.is_referrer.v, dtf = DS.cols.days_to_first_referral.v;
+    let pre = 0, post = 0;
+    for (const i of idx) {
+      if (!isRef[i] || dtf[i] === null) continue;
+      if (dtf[i] < 0) pre++; else post++;
+    }
+    return { pre, post, total: pre + post, prePct: pct(pre, pre + post) };
   },
 
   prePost(idx) {

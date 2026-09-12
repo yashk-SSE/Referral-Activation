@@ -1,64 +1,108 @@
 # Data contract
 
-Two flat extracts come out of Metabase. Everything on the dashboard is derived
-from these in `etl/transform.py` -- no business logic lives in SQL, so the cuts
-stay consistent with each other by construction.
+Two extracts come out of Metabase (SolarSquare Postgres, **database id 2**).
+Everything on the dashboard is derived from them in `etl/transform.py`, so all
+three tabs share one definition of "referrer", "activated", and "cohort".
 
-Column names below are what the SQL must alias to. The underlying table and
-column names in your warehouse can be anything; the `AS` aliases are the contract.
+Grain: **one row per customer**, cohorted on their first commissioning date.
+Referrals attach to a `prospectId`, not to an SSEID, so counting at project
+grain would double-count anyone with two projects.
 
 ---
 
-## Extract A -- `installations`
+## Extract A — `installations` (`sql/01_installations.sql`)
 
-One row per installation. This is the cohort base: the denominator for
-"how many of our installs became referrers".
+From `public.project`. One row per commissioned project.
 
-| column | type | required | notes |
-|---|---|---|---|
-| `install_id` | string | yes | primary key |
-| `customer_id` | string | yes | groups multiple installs under one customer; joins to referrals |
-| `install_date` | date | yes | commissioning / handover date -- drives the cohort month |
-| `booking_date` | date | no | order date; gives us booking-to-install lag |
-| `state` | string | no | geography cut |
-| `city` | string | no | geography cut |
-| `branch` | string | no | branch / office / cluster -- the ops accountability cut |
-| `acquisition_channel` | string | no | how this customer was originally acquired |
-| `capacity_kw` | number | no | system size |
-| `order_value` | number | no | for revenue-weighted views |
-| `referred_by_customer_id` | string | no | non-null if this sale itself came from a referral -- lets us build the referral tree and measure second-generation referrals |
+| contract column | source column | notes |
+|---|---|---|
+| `install_id` | `sseid` | also the pagination key |
+| `customer_id` | `prospectId` | joins to `referrals.referredBy` |
+| `install_date` | `commissioning_date` | UTC → IST before casting to date |
+| `state` / `city` / `branch` | `site_address_state` / `_city` / `_cluster` | |
+| `capacity_kw` | `project_size_kw` | |
+| `order_value` | `total_price` | |
 
-## Extract B -- `referrals`
+Excludes `project_state = 'cancelled'` (5 rows in a 24-month window).
 
-One row per referral lead, whatever its outcome. Losing the un-converted ones
-would make the activation-source analysis meaningless, so this must include
-every lead, not just the won ones.
+## Extract B — `referrals` (`sql/02_referrals.sql`)
 
-| column | type | required | notes |
-|---|---|---|---|
-| `referral_id` | string | yes | primary key |
-| `referrer_customer_id` | string | yes | joins to `installations.customer_id` |
-| `referral_date` | date | yes | when the lead was created |
-| `activation_source` | string | yes | **the key field** -- Sales / Online / BTL / CApp / Ops-AMC / Others |
-| `status` | string | no | current lead stage |
-| `converted_install_id` | string | no | non-null once the lead became an installation |
-| `converted_date` | date | no | when it converted |
+From `public.referrals`, left-joined to a de-duplicated `public.lead` for the
+conversion date.
 
-### On `activation_source`
+| contract column | source column | notes |
+|---|---|---|
+| `referral_id` | `_id` | pagination key |
+| `referrer_customer_id` | `referredBy` | **the referrer** |
+| `referral_date` | `createdAt` | UTC → IST |
+| `referrer_role` | `"referrer_role "` | **trailing space in the column name** |
+| `referral_source` | `source` | |
+| `converted_date` | `MAX(lead.order_closure_datetime)` | per `prospectId` |
 
-This is the field the whole "how are they being converted" question hangs on.
-Three things to confirm:
+`r."prospectId"` is the person being referred, not the referrer — it is what
+joins to `lead`. Mixing the two up silently inverts the whole analysis.
 
-1. **Where does it live?** A lead-source column, a campaign / UTM field, the
-   creating user's team, or something we have to derive from who touched the
-   lead first.
-2. **What are the raw values?** They will not be the six clean buckets. The ETL
-   keeps a mapping table so raw values fold into Sales / Online / BTL / CApp /
-   Ops-AMC / Others, and anything unmapped surfaces loudly rather than silently
-   landing in Others.
-3. **Is it set at lead creation or overwritten later?** If it gets overwritten
-   by the closing channel, it answers "who closed it" rather than "who activated
-   them" -- a different question, and we'd want the creation-time value.
+Not restricted to the cohort window: a customer's full referral history is
+needed to tell whether they referred before their own commissioning.
+
+---
+
+## How activation source is derived
+
+There is no single activation-source column. It comes from two, in order:
+
+1. **`referrer_role`** — if present, it names the employee who prompted the
+   referral, and that is the answer.
+2. **`referral_source`** — used only when the role is blank.
+
+The blanks are structural, not missing data:
+
+| `source` | rows with a role |
+|---|---|
+| `Referral - Existing Cx via Emp` | 84.8% |
+| `Referral - SSE Emp` | 73.5% |
+| `Referral - Existing Cx` | **0.0%** |
+| `Referral - SPP` / `SPP via RM` | **0.0%** |
+
+A blank role means no employee was involved — the customer referred on their
+own. So `Referral - Existing Cx` with no role maps to **Customer direct**, not
+to Others.
+
+Buckets live in `etl/source_map.json` and flow to the dashboard through
+`meta.json`, so adding one does not need a code change. Unrecognised values
+land in Others **and** are reported in the build log and the dashboard footer.
+
+### What the data does and does not support
+
+| requested bucket | status |
+|---|---|
+| Sales | `Solar Consultant`, `LRM`, `Pre sales Team`, `Inbound cc team`, `CDM` |
+| Ops/AMC | `Ops(...)` in two spellings, `NPS Sweep Team` |
+| BTL | `BTL` |
+| CApp | no app-specific value exists; the closest is **Customer direct** — referred with no employee involved |
+| Online | **not available.** `utm_source` is 98.6% null; there is no digital-channel attribution on referrals |
+| Others | `HO Team & Others`, plus anything unmapped |
+
+Two buckets exist in the data that were not in the original list — `Partner
+(SPP)` and `Employee (SSE)`. Both are ~0 on this dashboard because partners and
+employees are not themselves commissioned customers, so they drop out on the
+join. They are kept in the mapping so their referrals are never miscounted as
+customer referrals.
+
+---
+
+## Extraction constraints
+
+`/api/dataset/csv` and `/api/dataset/json` are **blocked by Cloudflare** in
+front of this Metabase instance — they return a 403 HTML page, which is easy to
+misread as a Metabase permission error. `/api/dataset` works but hard-caps at
+2000 rows regardless of the `constraints` sent with the request.
+
+So extracts are assembled by `Metabase.query_paged()` using keyset pagination
+(`WHERE key > last_seen ORDER BY key LIMIT 2000`) rather than OFFSET, which
+re-sorts everything skipped on each page and can drop or repeat rows if the
+data shifts mid-run. A 24-month pull is ~91 requests and takes roughly ten
+minutes.
 
 ---
 
@@ -66,15 +110,13 @@ Three things to confirm:
 
 | field | definition |
 |---|---|
-| `cohort_month` | month of `install_date` |
-| `is_referrer` | customer has >= 1 referral |
-| `first_referral_date` | min `referral_date` per customer |
-| `activation_source` (customer level) | source of the **first** referral -- what actually activated them |
-| `pre_install_referrer` | `first_referral_date` < `install_date` |
-| `months_to_first_referral` | whole months from install to first referral; negative for pre-install |
-| `referral_rank` | 1st, 2nd, 3rd ... referral per customer, for the trajectory view |
-| `mature_months` | months elapsed since cohort, so young cohorts are compared fairly |
+| `cohort_month` | month of first commissioning |
+| `is_referrer` | ≥ 1 referral |
+| `activated_by` | activation bucket of the **first** referral |
+| `days_to_first_referral` | negative when they referred before commissioning |
+| `pre_install_referrer` | `days_to_first_referral < 0` |
+| `maturity_months` | months elapsed since commissioning |
 
-Young cohorts always look worse than old ones because they have had less time to
-refer. Every cohort comparison on the dashboard is therefore indexed at a fixed
-maturity (e.g. "% who referred within 6 months"), never on a raw lifetime rate.
+The pre-install split is measured in **days**, not month buckets: a referral 13
+days before commissioning in the same calendar month is "before" by days but
+lands in the "same month" bar on the chart. Days is the honest headline.

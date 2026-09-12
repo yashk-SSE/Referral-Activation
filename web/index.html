@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Referral Cohorts</title>
-<link rel="stylesheet" href="styles.css?v=f21ac964">
+<link rel="stylesheet" href="styles.css?v=47269bf1">
 </head>
 <body>
 
@@ -13,7 +13,7 @@
     <span class="mark"></span>
     <div>
       <h1>Referral Cohorts</h1>
-      <p class="sub">Installation base &rarr; referrer activation &rarr; referral trajectory</p>
+      <p class="sub">How the installed base turns into referrers</p>
     </div>
   </div>
   <div class="stamp">
@@ -27,10 +27,9 @@
 
 <main id="app" hidden>
 
-  <!-- ---------------------------------------------------------------- -->
   <section class="filters" aria-label="Filters">
     <div class="filter">
-      <label for="fCohortFrom">Cohort from</label>
+      <label for="fCohortFrom">Commissioned from</label>
       <select id="fCohortFrom"></select>
     </div>
     <div class="filter">
@@ -38,16 +37,15 @@
       <select id="fCohortTo"></select>
     </div>
     <div class="filter"><label>State</label><div id="fState" class="multi"></div></div>
-    <div class="filter"><label>Branch</label><div id="fBranch" class="multi"></div></div>
-    <div class="filter"><label>Acquisition</label><div id="fChannel" class="multi"></div></div>
+    <div class="filter"><label>Cluster</label><div id="fBranch" class="multi"></div></div>
     <div class="filter"><label>System size</label><div id="fCapacity" class="multi"></div></div>
     <div class="filter grow-end">
-      <label for="fMaturity">Min maturity</label>
+      <label for="fMaturity">Minimum age</label>
       <select id="fMaturity">
         <option value="0">Any age</option>
-        <option value="3">3+ months old</option>
-        <option value="6">6+ months old</option>
-        <option value="12">12+ months old</option>
+        <option value="3">3+ months</option>
+        <option value="6">6+ months</option>
+        <option value="12">12+ months</option>
       </select>
     </div>
     <button id="resetFilters" class="btn-reset" type="button">Reset</button>
@@ -58,9 +56,6 @@
   <nav class="tabs" role="tablist">
     <button role="tab" class="tab active" data-tab="overview">Overview</button>
     <button role="tab" class="tab" data-tab="activation">Who activates them</button>
-    <button role="tab" class="tab" data-tab="geography">Geography &amp; branch</button>
-    <button role="tab" class="tab" data-tab="timing">Timing</button>
-    <button role="tab" class="tab" data-tab="trajectory">Trajectory</button>
     <button role="tab" class="tab" data-tab="coverage">Coverage gap</button>
   </nav>
 
@@ -68,138 +63,89 @@
   <section class="panel" data-panel="overview">
     <div class="card wide">
       <div class="card-head">
-        <h2>Cohort activation triangle</h2>
-        <p>Cumulative % of each install cohort that has given at least one referral, by months
-           since installation. Blank cells are months the cohort has not lived through yet &mdash;
-           that is why young cohorts stop short rather than looking like zeroes.</p>
+        <h2>When customers refer</h2>
+        <p>Months between a customer&rsquo;s first referral and their own commissioning.
+           Bars left of zero are customers who referred <strong>before</strong> their system
+           was commissioned.</p>
       </div>
-      <div id="triangle" class="triangle-wrap"></div>
+      <div class="chart" id="chTiming"></div>
+      <p class="finding" id="timingFinding"></p>
     </div>
+
     <div class="card">
       <div class="card-head">
-        <h2>Activation at a fixed age</h2>
-        <p>Each cohort measured at the same maturity, so a recent cohort is never
-           unfairly compared against an old one.</p>
+        <h2>Activation by commissioning month</h2>
+        <p>Share of each month&rsquo;s customers who have referred at least once.</p>
+        <p class="caveat">The last few months sit low because those customers are still
+           inside the window when most referrals happen &mdash; not because they are
+           worse. Set a minimum age to compare fairly.</p>
       </div>
-      <div class="chart" id="chIndexed"></div>
+      <div class="chart" id="chCohort"></div>
     </div>
+
     <div class="card">
       <div class="card-head">
-        <h2>Base vs referrers by cohort</h2>
-        <p>Absolute volumes behind the rates.</p>
+        <h2>Do they refer again?</h2>
+        <p>Of everyone who gave a first referral, how many went on to give more.</p>
       </div>
-      <div class="chart" id="chVolume"></div>
+      <div class="chart" id="chDepth"></div>
     </div>
   </section>
 
   <!-- ---------------------------------------------------------------- -->
   <section class="panel" data-panel="activation" hidden>
-    <div class="card wide">
+    <div class="card">
       <div class="card-head">
         <h2>What activated each referrer</h2>
-        <p>Attributed to the channel behind their <strong>first</strong> referral &mdash; the one
-           that actually turned a customer into a referrer. Later referrals may come
-           through other channels.</p>
-        <p class="caveat">The tail-off on the right is <strong>maturity, not decline</strong>:
-           recent cohorts have not had time to activate yet. Use the share chart below, or
-           set a minimum maturity filter, to compare periods fairly.</p>
+        <p>Attributed to whoever prompted their <strong>first</strong> referral.</p>
       </div>
-      <div class="chart tall" id="chSourceMix"></div>
+      <div class="chart" id="chSource"></div>
     </div>
+
     <div class="card">
-      <div class="card-head"><h2>Share of activations over time</h2>
-        <p>Mix shift by cohort. Watch for a channel quietly taking over.</p></div>
+      <div class="card-head">
+        <h2>Mix over time</h2>
+        <p>Share of activations by channel, per commissioning month.</p>
+      </div>
       <div class="chart" id="chSourceShare"></div>
     </div>
-    <div class="card">
-      <div class="card-head"><h2>Channel yield</h2>
-        <p>Not all activations are equal. Repeat rate is the share who went on to give
-           a second referral; conversion is referrals that became installations.</p></div>
+
+    <div class="card wide">
+      <div class="card-head">
+        <h2>Channel quality</h2>
+        <p>Volume is not the whole story. <em>Refers again</em> is the share who gave a
+           second referral; <em>became orders</em> is the share of their referrals that
+           closed.</p>
+      </div>
       <div id="tblSource" class="table-wrap"></div>
-    </div>
-  </section>
-
-  <!-- ---------------------------------------------------------------- -->
-  <section class="panel" data-panel="geography" hidden>
-    <div class="card">
-      <div class="card-head"><h2>Activation rate by state</h2>
-        <p>Bar length is the rate; the label carries the base size.</p></div>
-      <div class="chart tall" id="chState"></div>
-    </div>
-    <div class="card">
-      <div class="card-head"><h2>Branch scatter</h2>
-        <p>Base size against activation rate. Large circles low on the chart are the
-           biggest recoverable opportunities.</p></div>
-      <div class="chart tall" id="chBranchScatter"></div>
-    </div>
-    <div class="card wide">
-      <div class="card-head"><h2>Branch detail</h2>
-        <p>Sortable. &quot;vs avg&quot; compares each branch against the filtered average.</p></div>
-      <div id="tblBranch" class="table-wrap scroll"></div>
-    </div>
-  </section>
-
-  <!-- ---------------------------------------------------------------- -->
-  <section class="panel" data-panel="timing" hidden>
-    <div class="card">
-      <div class="card-head"><h2>Time to first referral</h2>
-        <p>Months between installation and first referral. Negative months are customers
-           who referred before their own system was commissioned.</p></div>
-      <div class="chart" id="chTiming"></div>
-    </div>
-    <div class="card">
-      <div class="card-head"><h2>Before vs after installation</h2>
-        <p>Pre-install referrers are a distinct population &mdash; they refer on the
-           strength of the buying experience, not the working system.</p></div>
-      <div class="chart" id="chPrePost"></div>
-    </div>
-    <div class="card wide">
-      <div class="card-head"><h2>Is activation getting faster?</h2>
-        <p>Median days to first referral by cohort, restricted to cohorts old enough to
-           have a stable median.</p></div>
-      <div class="chart" id="chSpeed"></div>
-    </div>
-  </section>
-
-  <!-- ---------------------------------------------------------------- -->
-  <section class="panel" data-panel="trajectory" hidden>
-    <div class="card">
-      <div class="card-head"><h2>How deep do referrers go?</h2>
-        <p>Of everyone who gave a first referral, how many gave a second, third, and so on.</p></div>
-      <div class="chart" id="chDepth"></div>
-    </div>
-    <div class="card">
-      <div class="card-head"><h2>Referrals per referrer by age</h2>
-        <p>Average referrals given, grouped by how long the customer has been on the
-           base. A rising line means referrers keep producing rather than going quiet.</p></div>
-      <div class="chart" id="chVelocity"></div>
-    </div>
-    <div class="card wide">
-      <div class="card-head"><h2>Which activation channel creates lasting referrers?</h2>
-        <p>One-and-done versus repeat, split by what activated them. A channel can win on
-           volume and still lose on durability.</p></div>
-      <div class="chart" id="chDurability"></div>
     </div>
   </section>
 
   <!-- ---------------------------------------------------------------- -->
   <section class="panel" data-panel="coverage" hidden>
     <div class="card wide">
-      <div class="card-head"><h2>The non-referrer base</h2>
-        <p>Customers who have never referred, sized by cohort. The dark band is the part
-           mature enough to have had a fair chance &mdash; that is the real addressable gap.</p></div>
+      <div class="card-head">
+        <h2>Referred vs never referred</h2>
+        <p>The dark band is customers old enough to have had a fair chance and still
+           never referred &mdash; the real addressable gap.</p>
+      </div>
       <div class="chart" id="chGap"></div>
     </div>
+
     <div class="card">
-      <div class="card-head"><h2>Where the gap sits</h2>
-        <p>Largest pools of mature non-referrers, by segment.</p></div>
-      <div id="tblGap" class="table-wrap scroll"></div>
+      <div class="card-head">
+        <h2>By state</h2>
+        <p>Sorted by untapped customers. Click a column to re-sort.</p>
+      </div>
+      <div id="tblState" class="table-wrap scroll"></div>
     </div>
+
     <div class="card">
-      <div class="card-head"><h2>Priority segments</h2>
-        <p>Segments scored on size of the untapped pool weighted by how well comparable
-           customers activate &mdash; where outreach should go first.</p></div>
-      <div id="tblPriority" class="table-wrap scroll"></div>
+      <div class="card-head">
+        <h2>By cluster</h2>
+        <p>Where outreach has the most customers to work with.</p>
+      </div>
+      <div id="tblBranch" class="table-wrap scroll"></div>
     </div>
   </section>
 
@@ -211,8 +157,8 @@
 
 <!-- vendored so the dashboard works behind corporate networks that block CDNs -->
 <script src="vendor/echarts.min.js?v=79a8b5a0"></script>
-<script src="js/data.js?v=d546f3fa"></script>
-<script src="js/charts.js?v=ad2e6ab7"></script>
-<script src="js/app.js?v=f4d3aef3"></script>
+<script src="js/data.js?v=01d80340"></script>
+<script src="js/charts.js?v=a57f4793"></script>
+<script src="js/app.js?v=c6ebe0b1"></script>
 </body>
 </html>
