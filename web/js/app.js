@@ -165,10 +165,28 @@ const PANELS = {
   }
 };
 
+/* With no rows in view, charts and tables would otherwise keep displaying the
+ * previous filter's results, which reads as real data rather than as nothing. */
+function setEmptyState(panel, empty) {
+  panel.classList.toggle('is-empty', empty);
+  let box = panel.querySelector('.empty-state');
+  if (!empty) { if (box) box.remove(); return; }
+  if (!box) {
+    box = document.createElement('div');
+    box.className = 'empty-state';
+    box.innerHTML = 'No customers match these filters.<br>' +
+      '<span>Widen the cohort range or clear a chip &mdash; some combinations, ' +
+      'like a state paired with another state’s branch, cannot overlap.</span>';
+    panel.appendChild(box);
+  }
+}
+
 function render() {
   const idx = applyFilters(F);
   const s = AGG.summary(idx);
   renderKPIs(s);
+  const panel = document.querySelector(`.panel[data-panel="${activeTab}"]`);
+  setEmptyState(panel, idx.length === 0);
   if (idx.length) PANELS[activeTab](idx, s);
   document.getElementById('footMeta').textContent =
     `${fmtInt(idx.length)} of ${fmtInt(DS.n)} customers in view · generated ${DS.meta.generated_at || '—'} · data as of ${DS.meta.as_of || '—'}`;

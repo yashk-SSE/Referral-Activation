@@ -1,0 +1,106 @@
+# Deploying
+
+Two stages: GitHub Pages now, Cloudflare Access when the URL needs to stop being
+public. The build is identical for both — only the hosting changes.
+
+---
+
+## Stage 1 — GitHub Pages
+
+### 1. Push the repo
+
+```bash
+git remote add origin https://github.com/<org>/referral-cohorts.git
+git branch -M main
+git push -u origin main
+```
+
+### 2. Add the secrets
+
+**Settings → Secrets and variables → Actions → New repository secret:**
+
+| secret | value |
+|---|---|
+| `METABASE_URL` | `https://metabase.yourcompany.com` (no trailing slash) |
+| `METABASE_API_KEY` | the read-only key |
+| `METABASE_DATABASE_ID` | the id `etl/probe.py` printed |
+
+Repository secrets are not exposed to forked-PR builds and are masked in logs.
+
+### 3. Enable Pages
+
+**Settings → Pages → Build and deployment → Source: GitHub Actions.**
+
+Do not pick "Deploy from a branch" — that would serve the repo contents directly
+and skip the ETL entirely.
+
+### 4. Run it
+
+**Actions → Refresh dashboard → Run workflow.** After that it runs daily at
+06:00 IST. The URL appears in the workflow summary and under Settings → Pages.
+
+### What the workflow refuses to do
+
+- Deploy when `METABASE_URL` is unset — fails with a clear error rather than
+  publishing nothing
+- Deploy an empty dataset — usually a broken join or too narrow a lookback
+- Deploy synthetic data to a live URL
+
+It warns (but still deploys) when unmapped `activation_source` values appear, so
+a new lead source in Metabase surfaces instead of silently inflating "Others".
+
+---
+
+## Stage 2 — Cloudflare Access
+
+Do this before the dashboard carries anything that should not be public, and
+before switching to `gated` mode.
+
+### 1. Connect the repo
+
+Cloudflare Dashboard → **Workers & Pages → Create → Pages → Connect to Git**.
+
+| setting | value |
+|---|---|
+| Build command | `pip install -r requirements.txt && python etl/build.py` |
+| Build output directory | `web` |
+| Environment variables | `METABASE_URL`, `METABASE_API_KEY`, `METABASE_DATABASE_ID`, `PRIVACY_MODE` |
+
+Mark `METABASE_API_KEY` as **encrypted** so it is write-only afterwards.
+
+Cloudflare Pages builds run on push. For the daily refresh, either add a
+Deploy Hook and call it from the existing GitHub Action on its schedule, or use a
+Cloudflare Cron Trigger.
+
+### 2. Gate it
+
+**Zero Trust → Access → Applications → Add an application → Self-hosted:**
+
+- Application domain: your Pages domain
+- Policy: *Allow* → Include → **Emails ending in** `@yourcompany.com`
+- Identity provider: Google Workspace (or One-time PIN, which needs no IdP setup)
+
+Free for up to 50 users. Viewers hit a company sign-in before the page loads;
+nothing static is served to an unauthenticated request.
+
+### 3. Turn on row-level data
+
+Once gated, set `PRIVACY_MODE=gated` in the Cloudflare environment variables.
+The build then ships `customer_id`, city, and exact dates, which is what the
+non-referrer target lists need to be actionable.
+
+### 4. Retire the public URL
+
+Settings → Pages → **Unpublish site** on GitHub, so a stale public copy is not
+left serving yesterday's numbers to anyone holding the old link.
+
+---
+
+## Keeping history
+
+Neither setup keeps snapshots — each deploy replaces the last, and `web/data/` is
+gitignored so customer data never enters git history.
+
+If week-over-week comparison becomes useful, the cheapest addition is an Action
+step that writes `web/data/aggregates.json` to a dated path in object storage (R2
+or S3) after each run. That file is a few KB and contains no row-level data.

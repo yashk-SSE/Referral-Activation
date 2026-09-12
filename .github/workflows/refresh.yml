@@ -1,0 +1,94 @@
+name: Refresh dashboard
+
+# The Metabase key lives only in GitHub Secrets. It is used here, in the runner,
+# to build static JSON -- it is never shipped to the browser.
+
+on:
+  schedule:
+    - cron: '30 0 * * *'   # 06:00 IST daily, before stakeholders look
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Privacy tier (public drops row-level identifiers)'
+        type: choice
+        options: [public, gated]
+        default: public
+      months:
+        description: 'Lookback window in months'
+        default: '24'
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - 'etl/**'
+      - 'sql/**'
+      - '.github/workflows/refresh.yml'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Build datasets from Metabase
+        env:
+          METABASE_URL: ${{ secrets.METABASE_URL }}
+          METABASE_API_KEY: ${{ secrets.METABASE_API_KEY }}
+          METABASE_DATABASE_ID: ${{ secrets.METABASE_DATABASE_ID }}
+          PRIVACY_MODE: ${{ inputs.mode || 'public' }}
+          LOOKBACK_MONTHS: ${{ inputs.months || '24' }}
+        run: |
+          if [ -z "$METABASE_URL" ]; then
+            echo "::error::METABASE_URL secret is not set. Add METABASE_URL, METABASE_API_KEY"
+            echo "::error::and METABASE_DATABASE_ID under Settings -> Secrets -> Actions."
+            exit 1
+          fi
+          python etl/build.py --mode "$PRIVACY_MODE" --months "$LOOKBACK_MONTHS"
+
+      - name: Sanity-check the output
+        run: |
+          python - <<'PY'
+          import json, sys
+          with open('web/data/customers.json') as fh:
+              n = json.load(fh)['n']
+          with open('web/data/meta.json') as fh:
+              meta = json.load(fh)
+          print(f"{n:,} customers, mode={meta['mode']}, source={meta['source']}")
+          if n == 0:
+              sys.exit("Refusing to deploy an empty dataset -- check the SQL and the lookback window.")
+          if meta['source'] == 'sample':
+              sys.exit("Refusing to deploy synthetic data to a live dashboard.")
+          if meta['unmapped_source_count']:
+              print(f"::warning::{meta['unmapped_source_count']} unmapped activation_source "
+                    f"value(s) fell into Others -- update etl/source_map.json")
+          PY
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
