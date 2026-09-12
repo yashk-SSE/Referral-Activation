@@ -1,0 +1,16 @@
+# Secrets -- never commit
+.env
+.env.*
+!.env.example
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local scratch
+*.log
+.DS_Store
+data/_raw/
