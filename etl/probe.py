@@ -18,6 +18,14 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from metabase import Metabase, MetabaseError, load_dotenv  # noqa: E402
 
+# Some column names carry non-ASCII characters that the default Windows console
+# codepage cannot encode, which would otherwise crash the dump mid-table.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs")
 
 

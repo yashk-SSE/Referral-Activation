@@ -50,12 +50,12 @@ def fetch_live(lookback_months: int) -> tuple[pd.DataFrame, pd.DataFrame]:
     print(f"Querying Metabase at {mb.base_url} (database {db_id})...")
     installs = pd.DataFrame(
         mb.query_file(os.path.join(SQL_DIR, "01_installations.sql"), db_id,
-                      lookback_months=lookback_months)
+                      key="install_id", lookback_months=lookback_months)
     )
     print(f"  installations: {len(installs):,} rows")
     referrals = pd.DataFrame(
         mb.query_file(os.path.join(SQL_DIR, "02_referrals.sql"), db_id,
-                      lookback_months=lookback_months)
+                      key="referral_id", lookback_months=lookback_months)
     )
     print(f"  referrals:     {len(referrals):,} rows")
     return installs, referrals

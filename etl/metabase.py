@@ -20,6 +20,9 @@ import requests
 DISPLAY_ENDPOINT = "/api/dataset"
 EXPORT_ENDPOINT = "/api/dataset/json"
 
+# /api/dataset hard-caps at 2000 rows regardless of the constraints we send.
+PAGE_SIZE = 2000
+
 
 class MetabaseError(RuntimeError):
     pass
@@ -68,6 +71,16 @@ class Metabase:
                     "is active and that METABASE_URL points at the right instance."
                 )
             if resp.status_code == 403:
+                # A Cloudflare block returns an HTML page; a genuine Metabase
+                # permission error returns JSON. They need different fixes, so
+                # do not report one as the other.
+                if "text/html" in resp.headers.get("content-type", ""):
+                    raise MetabaseError(
+                        f"403 HTML page for {path} -- this is the WAF in front of "
+                        "Metabase (Cloudflare), not a Metabase permission. The CSV/JSON "
+                        "download endpoints are blocked on this instance; use "
+                        "query_paged(), which pages through /api/dataset instead."
+                    )
                 raise MetabaseError(
                     f"403 from Metabase for {path}: the key's permission group lacks "
                     "access. For native SQL the group needs 'Native query editing' on "
@@ -139,11 +152,61 @@ class Metabase:
         names = [c.get("name") for c in data["cols"]]
         return [dict(zip(names, row)) for row in data["rows"]]
 
-    def query_file(self, path: str, database_id: int, **fmt: Any) -> list[dict]:
+    def query_paged(
+        self,
+        sql: str,
+        database_id: int,
+        key: str,
+        page_size: int = PAGE_SIZE,
+        progress: bool = True,
+    ) -> list[dict]:
+        """Page through a result set using keyset pagination on `key`.
+
+        /api/dataset truncates at 2000 rows and the CSV/JSON export endpoints
+        are blocked by the WAF on this instance, so full extracts have to be
+        assembled from pages. Keyset (key > last_seen) rather than OFFSET:
+        OFFSET re-scans and re-sorts everything skipped on every page, which
+        gets quadratic, and it silently drops or repeats rows if the underlying
+        data shifts between pages.
+
+        `key` must be unique and sortable -- sseid for projects, _id for
+        referrals.
+        """
+        inner = sql.strip().rstrip(";")
+        rows: list[dict] = []
+        last = ""
+        page_no = 0
+        while True:
+            cursor = last.replace("'", "''")
+            page_sql = (
+                f"SELECT * FROM (\n{inner}\n) _page\n"
+                f'WHERE _page."{key}" > \'{cursor}\'\n'
+                f'ORDER BY _page."{key}"\nLIMIT {page_size}'
+            )
+            page = self.query(page_sql, database_id, full=False)
+            if not page:
+                break
+            rows.extend(page)
+            page_no += 1
+            if progress:
+                print(f"      page {page_no}: +{len(page):,} (total {len(rows):,})", flush=True)
+            if len(page) < page_size:
+                break
+            nxt = page[-1].get(key)
+            if nxt is None or str(nxt) == last:
+                break  # key is not actually unique/sortable -- stop rather than loop
+            last = str(nxt)
+        return rows
+
+    def query_file(
+        self, path: str, database_id: int, key: str | None = None, **fmt: Any
+    ) -> list[dict]:
         with open(path, "r", encoding="utf-8") as fh:
             sql = fh.read()
         if fmt:
             sql = sql.format(**fmt)
+        if key:
+            return self.query_paged(sql, database_id, key)
         return self.query(sql, database_id)
 
 

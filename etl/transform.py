@@ -17,42 +17,72 @@ from typing import Any
 
 import pandas as pd
 
-CANONICAL_SOURCES = ["Sales", "Online", "BTL", "CApp", "Ops/AMC", "Others"]
 MAX_TRIANGLE_MONTHS = 24
 
+# Populated from source_map.json at load time so the dashboard and the ETL
+# always agree on the bucket list and its order.
+CANONICAL_SOURCES: list[str] = []
+
 
 # ---------------------------------------------------------------------------
-# source mapping
+# activation source
 # ---------------------------------------------------------------------------
-def load_source_map(path: str) -> dict[str, str]:
+def load_source_map(path: str) -> dict[str, Any]:
+    """Load the two-stage activation mapping (employee role, then programme)."""
+    global CANONICAL_SOURCES
     with open(path, "r", encoding="utf-8") as fh:
         cfg = json.load(fh)
-    out: dict[str, str] = {}
-    for canonical, raw_values in cfg["map"].items():
-        for raw in raw_values:
-            out[str(raw).strip().lower()] = canonical
-    return out
+
+    def flatten(section: str) -> dict[str, str]:
+        out: dict[str, str] = {}
+        for canonical, raw_values in cfg.get(section, {}).items():
+            for raw in raw_values:
+                out[str(raw).strip().lower()] = canonical
+        return out
+
+    CANONICAL_SOURCES = list(cfg["display_order"])
+    return {"role": flatten("role_map"), "source": flatten("source_map")}
 
 
-def apply_source_map(series: pd.Series, mapping: dict[str, str]) -> tuple[pd.Series, Counter]:
-    """Fold raw lead-source values into the six canonical buckets.
+def _blank(value: Any) -> bool:
+    return (
+        value is None
+        or (isinstance(value, float) and math.isnan(value))
+        or not str(value).strip()
+    )
 
-    Anything unmapped is returned in the counter so it surfaces loudly in the
-    build log instead of silently disappearing into Others.
+
+def derive_activation(
+    roles: pd.Series, sources: pd.Series, mapping: dict[str, Any]
+) -> tuple[pd.Series, Counter]:
+    """Resolve each referral to one activation bucket.
+
+    The employee role wins when present, because it says who actually prompted
+    the referral. When it is blank no employee was involved, so the programme
+    route (source) is what distinguishes a self-serve customer referral from a
+    partner or employee one.
     """
     unmapped: Counter = Counter()
+    role_map, source_map = mapping["role"], mapping["source"]
 
-    def _map(value: Any) -> str:
-        if value is None or (isinstance(value, float) and math.isnan(value)):
-            unmapped["(null)"] += 1
+    def _one(role: Any, source: Any) -> str:
+        if not _blank(role):
+            key = str(role).strip().lower()
+            if key in role_map:
+                return role_map[key]
+            unmapped[f"role: {str(role).strip()}"] += 1
             return "Others"
-        key = str(value).strip().lower()
-        if key in mapping:
-            return mapping[key]
-        unmapped[str(value).strip()] += 1
+        if not _blank(source):
+            key = str(source).strip().lower()
+            if key in source_map:
+                return source_map[key]
+            unmapped[f"source: {str(source).strip()}"] += 1
+            return "Others"
+        unmapped["(no role, no source)"] += 1
         return "Others"
 
-    return series.map(_map), unmapped
+    values = [_one(r, s) for r, s in zip(roles, sources)]
+    return pd.Series(values, index=roles.index), unmapped
 
 
 # ---------------------------------------------------------------------------
@@ -89,8 +119,11 @@ def build_customer_base(
     referrals["referral_date"] = _to_date(referrals["referral_date"])
     referrals = referrals.dropna(subset=["referral_date", "referrer_customer_id"])
     referrals["referrer_customer_id"] = referrals["referrer_customer_id"].astype(str)
-    referrals["activation_source"], unmapped = apply_source_map(
-        referrals["activation_source"], source_map
+    for col in ("referrer_role", "referral_source"):
+        if col not in referrals.columns:
+            referrals[col] = None
+    referrals["activation_source"], unmapped = derive_activation(
+        referrals["referrer_role"], referrals["referral_source"], source_map
     )
 
     # --- customer base, cohorted on first install --------------------------
