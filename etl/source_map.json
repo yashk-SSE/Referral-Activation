@@ -1,0 +1,79 @@
+{
+  "_comment": [
+    "Folds raw activation_source values from Metabase into the six canonical buckets.",
+    "Matching is case-insensitive and whitespace-trimmed.",
+    "Anything not listed here lands in Others AND is reported in the build log as",
+    "an unmapped value -- check that report after the first real run and add the",
+    "raw values you see to the right bucket."
+  ],
+  "map": {
+    "Sales": [
+      "sales",
+      "sales_team",
+      "sales executive",
+      "se",
+      "field sales",
+      "inside sales",
+      "telecalling",
+      "tele sales"
+    ],
+    "Online": [
+      "online",
+      "website",
+      "web",
+      "organic",
+      "google",
+      "meta",
+      "facebook",
+      "instagram",
+      "paid_social",
+      "paid_search",
+      "seo",
+      "email",
+      "whatsapp_campaign"
+    ],
+    "BTL": [
+      "btl",
+      "below the line",
+      "event",
+      "society_activation",
+      "canopy",
+      "kiosk",
+      "roadshow",
+      "rwa",
+      "exhibition"
+    ],
+    "CApp": [
+      "capp",
+      "customer_app",
+      "customer app",
+      "app",
+      "mobile_app",
+      "in_app",
+      "self_serve"
+    ],
+    "Ops/AMC": [
+      "ops",
+      "amc",
+      "ops/amc",
+      "service",
+      "servicing",
+      "maintenance",
+      "technician",
+      "site_visit",
+      "installation_team",
+      "cx",
+      "customer_success"
+    ],
+    "Others": [
+      "other",
+      "others",
+      "unknown",
+      "na",
+      "n/a",
+      "partner",
+      "channel_partner",
+      "walk_in"
+    ]
+  }
+}
