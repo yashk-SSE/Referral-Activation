@@ -1,7 +1,8 @@
 # Referral Cohorts
 
-A stakeholder dashboard tracking how the installation base converts into referrers:
-how many, what activated them, how fast, and what they do next.
+A stakeholder dashboard tracking how the installed base converts into referrers:
+how many, which Sub-Channel activated them, when relative to their own
+installation, and how many of those referrals became orders.
 
 Data comes from Metabase. The dashboard is static — no server, no database
 connection from the browser, no API key anywhere near the client.
@@ -19,7 +20,7 @@ Metabase ──(read-only key, GitHub Secrets)──▶ GitHub Actions, daily 06
                                                         │
                                               GitHub Pages (static hosting)
                                                         ▼
-                                       browser filters all six cuts locally
+                                        browser filters every cut locally
 ```
 
 Two design decisions worth knowing:
@@ -28,9 +29,9 @@ Two design decisions worth knowing:
 anything it uses to call Metabase is visible in DevTools. So the key stays in
 GitHub Secrets, the Action queries Metabase, and only derived JSON is published.
 
-**All six cuts are computed in the browser from one row set.** Filters reshape
-every view at once and the cuts cannot drift apart, because they all derive from
-the same rows. At ≤25k customers this is a few milliseconds of work.
+**Every cut is computed in the browser from one row set.** Filters reshape all
+three tabs at once and the cuts cannot drift apart, because they all derive from
+the same rows. At ~47k customers this is a few milliseconds of work.
 
 ---
 
@@ -86,11 +87,12 @@ editing". Either grant it on that database, or fall back to saved questions —
 
 ### 3. Write the extraction SQL
 
-Fill in `sql/01_installations.sql` and `sql/02_referrals.sql`. They must alias
-their output columns to the names in [docs/DATA_CONTRACT.md](docs/DATA_CONTRACT.md)
-— that mapping is the only contract between your warehouse and this dashboard.
+`sql/01_installations.sql` and `sql/02_referrals.sql` are already written against
+the SolarSquare schema. They must alias their output columns to the names in
+[docs/DATA_CONTRACT.md](docs/DATA_CONTRACT.md) — that mapping is the only
+contract between the warehouse and this dashboard.
 
-### 4. Map the activation sources
+### 4. Check the Sub-Channel mapping
 
 Run the build once and read the log:
 
@@ -98,10 +100,13 @@ Run the build once and read the log:
 python etl/build.py
 ```
 
-Any raw `activation_source` value not recognised is listed as unmapped and
-counted into `Others`. Add the real values to `etl/source_map.json` under the
-right bucket and re-run. The dashboard footer shows the unmapped count, so this
-never rots silently.
+Any `referrer_role` not recognised is listed and counted into `Others`. Add it
+to `etl/sub_channel_map.json` under the right bucket and re-run. The dashboard
+footer shows the count too, so this never rots silently.
+
+Note the extraction is ~91 paginated requests and takes roughly ten minutes —
+the WAF blocks Metabase's bulk export endpoints. See
+[docs/DATA_CONTRACT.md](docs/DATA_CONTRACT.md).
 
 ---
 
@@ -129,23 +134,28 @@ Set with `--mode gated` locally, or the `mode` input on a manual workflow run.
 
 ---
 
-## The six cuts
+## The three tabs
 
 | tab | question it answers |
 |---|---|
-| **Overview** | How many installs become referrers, and how that rate matures month by month |
-| **Who activates them** | Sales / Online / BTL / CApp / Ops-AMC / Others — attributed to the *first* referral, with each channel's yield |
-| **Geography & branch** | Where activation is strong or weak, and which large branches underperform |
-| **Timing** | How long until the first referral, and how pre-install referrers differ |
-| **Trajectory** | Whether referrers keep going after the first — depth, velocity, and which channel creates lasting referrers |
-| **Coverage gap** | The never-referred base, filtered to customers mature enough to judge, ranked by headroom |
+| **Overview** | How many installed customers become referrers, when their first referral lands relative to their own installation, and whether they refer again |
+| **Sub-Channel** | Sales / Online / CApp / BTL / Ops/AMC / Others — who activated them, each Sub-Channel's quality, the before-vs-after-installation split, and how fast the referral is captured after HOTO |
+| **Coverage gap** | The never-referred base by state and cluster, ranked by how many customers are still untapped |
 
-### Two things the dashboard deliberately guards against
+Full definitions for every term are in
+**[docs/DEFINITIONS.md](docs/DEFINITIONS.md)**.
 
-**Young cohorts are not failing cohorts.** A cohort installed last month has had
-one month to refer. Every cohort comparison is either maturity-masked (the
-triangle leaves future months blank) or indexed at a fixed age.
+### Three things the dashboard deliberately guards against
 
-**Referrals belong to customers, not installations.** A customer with two
-installs would otherwise be counted twice. The base is one row per customer,
-cohorted on their first install date.
+**Recent months are not failing months.** A customer installed last month has
+not lived through the window where most referrals happen. Cohort comparisons
+carry that caveat on the chart, and the minimum-age filter makes them
+comparable.
+
+**Referrals belong to customers, not projects.** A customer with two projects
+would otherwise be counted twice. The base is one row per customer, cohorted on
+their first installation.
+
+**"First referral" is ordered by timestamp, not date.** 5,864 customers have
+more than one referral on their earliest date and 220 of those carry different
+referrer roles — ordering by date alone makes their Sub-Channel arbitrary.
