@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Referral Activation</title>
 <link rel="icon" type="image/png" href="sse-logo.png">
-<link rel="stylesheet" href="styles.css?v=d38447e3">
+<link rel="stylesheet" href="styles.css?v=630131c2">
 </head>
 <body>
 
@@ -31,7 +31,13 @@
 
 <main id="app" hidden>
 
-  <section class="filters" aria-label="Filters">
+  <button id="filterToggle" class="filter-toggle" type="button" aria-expanded="false">
+    <span class="ft-icon">&#9776;</span>
+    <span class="ft-text">Filters</span>
+    <span id="filterSummary" class="ft-summary"></span>
+  </button>
+
+  <section class="filters collapsed" aria-label="Filters">
     <div class="filter">
       <label>Installation date</label>
       <div class="presets" id="datePresets">
@@ -176,7 +182,7 @@
            with the filters above applied. Turn <em>Click-to-download</em> off to browse
            without triggering files.</p>
       </div>
-      <div id="tblCity" class="table-wrap scroll"></div>
+      <div id="tblCity" class="table-wrap scroll centered"></div>
       <p class="finding" id="salesFinding"></p>
       <p id="sheetLink" class="sheet-link" hidden></p>
     </div>
@@ -262,6 +268,6 @@
 <script src="js/data.js?v=c76b80ce"></script>
 <script src="js/charts.js?v=d2a659c0"></script>
 <script src="js/export.js?v=78065135"></script>
-<script src="js/app.js?v=83e5e579"></script>
+<script src="js/app.js?v=53ae114b"></script>
 </body>
 </html>

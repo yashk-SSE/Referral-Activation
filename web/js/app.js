@@ -174,6 +174,16 @@ function buildFilters() {
   buildMultiSelect('fState', 'state', F.state, 'States');
   buildMultiSelect('fBranch', 'branch', F.branch, 'Clusters');
 
+  // On a phone the full filter block is taller than the screen, so it starts
+  // collapsed behind a summary showing what is actually applied.
+  const fToggle = document.getElementById('filterToggle');
+  const fSection = document.querySelector('.filters');
+  fToggle.addEventListener('click', () => {
+    const open = fSection.classList.toggle('open');
+    fSection.classList.toggle('collapsed', !open);
+    fToggle.setAttribute('aria-expanded', String(open));
+  });
+
   const toggle = document.getElementById('drillToggle');
   toggle.addEventListener('click', () => {
     drilldownOn = !drilldownOn;
@@ -314,6 +324,7 @@ const PANELS = {
       numCol('referrer_activated', 'Referrer activation', 'referrer_activated'),
       pctCol('activation_rate', 'Act %'),
       numCol('successful_activated', 'Orders activation', 'successful_activated'),
+      pctCol('success_rate', 'Order %'),
       numCol('not_referred', 'Not referred', 'not_referred'),
       numCol('leads', '# Leads'),
       numCol('orders', '# Orders'),
@@ -444,6 +455,12 @@ function render() {
   const panel = document.querySelector('.panel[data-panel="' + activeTab + '"]');
   setEmptyState(panel, idx.length === 0);
   if (idx.length) PANELS[activeTab](idx, s);
+  const bits = [];
+  if (F.from) bits.push(F.from + ' to ' + F.to);
+  if (F.state.size) bits.push(F.state.size === 1 ? [...F.state][0] : F.state.size + ' states');
+  if (F.branch.size) bits.push(F.branch.size === 1 ? [...F.branch][0] : F.branch.size + ' clusters');
+  document.getElementById('filterSummary').textContent = bits.join(' · ');
+
   document.getElementById('footMeta').textContent =
     fmtInt(idx.length) + ' of ' + fmtInt(DS.n) + ' installed customers in view' +
     (F.from ? ' · installed ' + F.from + ' to ' + F.to : '');
