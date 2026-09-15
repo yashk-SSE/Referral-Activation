@@ -179,6 +179,87 @@ yet; they are mapped for when they do.
 
 ---
 
+## 5b. Funnel stages — Cx Recommended and IDV
+
+Added 2026-09-15. Both are configured in `etl/funnel_config.json`.
+
+### Cx Recommended
+
+`public.new_nps_response_live`, question
+`how_likely_are_you_to_recommend_solarsquare_to_a_friend_or_coll`, a 0–10
+scale, joined on `sse_id = project.sseid`.
+
+| Term | Definition |
+|---|---|
+| **Answered the survey** | the customer has at least one scored response |
+| **Cx Recommended** | their score ≥ `min_score` (default **9**, the standard NPS promoter cut) |
+
+- A customer who answered more than once is taken at their **highest** score —
+  the question is whether they have ever expressed willingness to recommend.
+  `submitteddate` is mixed-format free text (`21/02/25 13:42` and
+  `Sep 9, 2024 9:12 AM` both occur), so "most recent response" is not reliably
+  derivable and was not used.
+- `sentiment` in that table is the sentiment of the free-text **reason**, not of
+  the score — score 10 appears with sentiment `Negative` 37 times. The score is
+  the field that answers the question.
+- `public.solarsquare_nps_response_live` is the older, smaller feed (2,191 rows,
+  nothing after 2023) and is not used.
+
+### IDV — Installation Day Visit
+
+`public.usertasks` where `key` is in `idv.task_keys` (default **`SC_IDV_01`**,
+the task described "Installation Day Visit"), completed within
+`days_before` … `days_after` of the customer's installation date
+(default **−3 … +3**; `days_after` is the configurable upper limit).
+
+- `timeCompleted` is epoch milliseconds as text; `-1.0` means not completed.
+- `usertasks` has no SSEID, so it joins on `project._id`.
+- The window is applied in `transform.py`, not in SQL, so changing the config
+  needs no SQL edit.
+
+**Visits are no longer in `public.user_slots_visits_visits`.** That table holds
+8,506 rows for 2023, 38,858 for 2024, 4,610 for 2025 and **nothing for 2026** —
+it is dead. `usertasks` is current (3.8M completions in 2026).
+
+### Read the funnel with its coverage
+
+Today, of the 24-month installed base:
+
+| Stage | Customers | % of installed |
+|---|---|---|
+| Installed | 46,862 | 100.0% |
+| Answered the survey | 3,801 | 8.1% |
+| Cx Recommended (9–10) | 3,477 | 7.4% |
+| IDV done | 1 | 0.0% |
+| Referrer | 21,754 | 46.4% |
+| Successful referrer | 10,916 | 23.3% |
+
+**The stages are not nested.** A customer can be a referrer without ever
+answering the survey — 19,400 of them are. The chart is a bar per stage, not a
+funnel shape, because a funnel would imply a containment that does not hold.
+
+**The drop to 7.4% is reach, not reluctance.** 91.5% of customers who answer
+score 9–10. Survey non-response is therefore reported as its own stage.
+
+**IDV is near zero because `SC_IDV_01` went live in September 2026** (4 records
+to date). The plumbing is built and will fill as the task is adopted.
+
+### Does recommending predict referring?
+
+| Survey answer | Customers | Referral rate | Success rate | Referrals each |
+|---|---|---|---|---|
+| Recommended (9–10) | 3,477 | 62.5% | 33.2% | 1.93 |
+| Passive (7–8) | 207 | 56.0% | 32.9% | 1.59 |
+| Detractor (0–6) | 117 | 56.4% | 29.9% | 1.30 |
+| Did not answer | 43,061 | 45.0% | 22.4% | 1.08 |
+
+Promoters refer at 62.5% against 45.0% for non-responders. But note detractors
+still refer at 56.4% — answering the survey at all is a stronger signal than
+what was answered, which is consistent with survey response being a proxy for
+engagement rather than a driver of referral.
+
+---
+
 ## 6. Referral timing
 
 Measured for each referrer's **first** referral, relative to **their own**

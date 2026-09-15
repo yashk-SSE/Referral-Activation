@@ -243,6 +243,38 @@ const PANELS = {
     ], rows, { sortKey: 'n' });
   },
 
+  funnel(idx, s) {
+    const stages = AGG.funnelStages(idx);
+    chartFunnel(stages);
+
+    const cfg = DS.meta.funnel_config || {};
+    const answered = stages.find(x => x.stage === 'Answered the survey');
+    const rec = stages.find(x => x.stage === 'Cx Recommended');
+    const idv = stages.find(x => x.stage === 'IDV done');
+    const recOfAnswered = answered && answered.customers
+      ? pct(rec ? rec.customers : 0, answered.customers) : 0;
+    document.getElementById('funnelFinding').innerHTML =
+      'Only <strong>' + fmtPct(answered ? answered.pct : 0) + '</strong> of the installed ' +
+      'base has answered the survey, but <strong>' + fmtPct(recOfAnswered) + '</strong> of ' +
+      'those who did scored ' + (cfg.min_score || 9) + '&ndash;' + (cfg.scale_max || 10) + '. ' +
+      'The drop at <em>Cx Recommended</em> is mostly reach, not reluctance.' +
+      (idv && idv.customers < 50
+        ? ' IDV (<code>' + (cfg.idv_task_keys || []).join(', ') + '</code>, ' +
+          (cfg.idv_days_before || 3) + ' days before to ' + (cfg.idv_days_after || 3) +
+          ' days after installation) went live in September 2026, so it is still near zero.'
+        : '');
+
+    renderTable('tblNps', [
+      { key: 'group', label: 'Survey answer' },
+      { key: 'base', label: 'Customers', num: true, bar: true },
+      { key: 'referrers', label: 'Referrers', num: true },
+      { key: 'rate', label: 'Referral rate', num: true, pct: true },
+      { key: 'successful', label: 'Successful', num: true },
+      { key: 'successRate', label: 'Success rate', num: true, pct: true },
+      { key: 'perCustomer', label: 'Referrals each', num: true, fmt: v => v.toFixed(2) }
+    ], AGG.byNpsGroup(idx), { sortKey: 'base' });
+  },
+
   coverage(idx, s) {
     chartGap(AGG.gapByCohort(idx));
     const cols = [

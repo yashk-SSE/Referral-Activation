@@ -1,0 +1,34 @@
+{
+  "_comment": [
+    "Configurable inputs for the two funnel stages added 2026-09-15.",
+    "",
+    "cx_recommended -- 'how likely are you to recommend SolarSquare' from",
+    "public.new_nps_response_live, joined on sse_id = project.sseid. The scale is",
+    "0-10, so min_score 9 is the standard NPS promoter definition. Set it to 7 to",
+    "count non-detractors instead.",
+    "",
+    "  A customer who answered more than once is taken at their HIGHEST score:",
+    "  the question is whether they have ever expressed willingness to recommend.",
+    "  submitteddate is mixed-format free text ('21/02/25 13:42' and",
+    "  'Sep 9, 2024 9:12 AM' both occur), so 'latest response' is not reliably",
+    "  derivable and was not used.",
+    "",
+    "idv -- Installation Day Visit, from public.usertasks. SC_IDV_01 is the task",
+    "literally named 'Installation Day Visit'; it went live in September 2026, so",
+    "volumes are near zero until it is adopted. Add more keys here to widen it.",
+    "",
+    "  days_before / days_after define the window around the installation date.",
+    "  days_after is the configurable upper limit."
+  ],
+
+  "cx_recommended": {
+    "min_score": 9,
+    "scale_max": 10
+  },
+
+  "idv": {
+    "task_keys": ["SC_IDV_01"],
+    "days_before": 3,
+    "days_after": 3
+  }
+}

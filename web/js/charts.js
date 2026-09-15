@@ -327,3 +327,37 @@ function chartDetail(rows) {
     }]
   }));
 }
+
+
+/* ---------------------------------------------------------------------- */
+/* funnel                                                                  */
+/* ---------------------------------------------------------------------- */
+function chartFunnel(rows) {
+  // A horizontal bar rather than an ECharts funnel: the stages are not strictly
+  // nested (a customer can be a referrer without answering the survey), and a
+  // funnel shape would imply a containment that does not hold.
+  mount('chFunnel', Object.assign(BASE(), {
+    grid: { left: 10, right: 92, top: 10, bottom: 24, containLabel: true },
+    legend: { show: false },
+    tooltip: {
+      trigger: 'axis', backgroundColor: C.tooltipBg, borderColor: C.tooltipBorder,
+      borderWidth: 1, textStyle: { color: C.textStrong, fontSize: 12 },
+      formatter: p => {
+        const r = rows[p[0].dataIndex];
+        return '<b>' + r.stage + '</b><br/>' + fmtInt(r.customers) + ' customers<br/>' +
+               '<span style="color:' + C.text + '">' + fmtPct(r.pct) + ' of installed</span>';
+      }
+    },
+    xAxis: AXIS_Y({ axisLabel: { show: false }, splitLine: { show: false } }),
+    yAxis: AXIS_X({ data: rows.map(r => r.stage), axisLabel: { color: C.text, fontSize: 11 } }),
+    series: [{
+      type: 'bar', data: rows.map(r => r.customers), barMaxWidth: 26,
+      itemStyle: {
+        color: p => (rows[p.dataIndex].coverage ? '#b4bcc6' : C.accent),
+        borderRadius: [0, 3, 3, 0]
+      },
+      label: { show: true, position: 'right', color: C.text, fontSize: 11,
+               formatter: p => fmtInt(p.value) + '  (' + fmtPct(rows[p.dataIndex].pct) + ')' }
+    }]
+  }));
+}

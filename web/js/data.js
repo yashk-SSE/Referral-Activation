@@ -242,6 +242,76 @@ const AGG = {
       .filter(r => r.before || r.after);
   },
 
+  /** The Installed -> Recommended -> IDV -> Referrer funnel.
+   *
+   * Survey non-response is reported as its own stage. Without it the drop from
+   * 100% to ~7% reads as "customers will not recommend us", when it actually
+   * says "we have not asked most of them" -- 91% of those who DO answer are
+   * promoters.
+   */
+  funnelStages(idx) {
+    const n = idx.length;
+    const cols = {
+      answered: DS.cols.nps_answered, rec: DS.cols.cx_recommended,
+      idv: DS.cols.idv_done, ref: DS.cols.is_referrer,
+      suc: DS.cols.is_successful_referrer
+    };
+    const count = c => {
+      if (!c) return null;
+      let k = 0;
+      for (const i of idx) if (c.v[i]) k++;
+      return k;
+    };
+    const rows = [
+      { stage: 'Installed', customers: n },
+      { stage: 'Answered the survey', customers: count(cols.answered), coverage: true },
+      { stage: 'Cx Recommended', customers: count(cols.rec) },
+      { stage: 'IDV done', customers: count(cols.idv) },
+      { stage: 'Referrer', customers: count(cols.ref) },
+      { stage: 'Successful referrer', customers: count(cols.suc) }
+    ].filter(r => r.customers !== null);
+    return rows.map(r => ({ ...r, pct: pct(r.customers, n) }));
+  },
+
+  /** Does saying you would recommend actually predict referring?
+   *
+   * Split on the survey answer rather than on the funnel, so "did not answer"
+   * is visible as its own group instead of being lumped with detractors.
+   */
+  byNpsGroup(idx) {
+    const ans = DS.cols.nps_answered, score = DS.cols.nps_score;
+    const ref = DS.cols.is_referrer.v;
+    const suc = DS.cols.is_successful_referrer ? DS.cols.is_successful_referrer.v : null;
+    const rt = DS.cols.referrals_total.v;
+    if (!ans || !score) return [];
+    const min = (DS.meta.funnel_config || {}).min_score || 9;
+    const groups = new Map();
+    const put = (k, i) => {
+      let a = groups.get(k);
+      if (!a) groups.set(k, a = { group: k, base: 0, referrers: 0, successful: 0, referrals: 0 });
+      a.base++;
+      a.referrals += rt[i] || 0;
+      if (ref[i]) a.referrers++;
+      if (suc && suc[i]) a.successful++;
+    };
+    for (const i of idx) {
+      if (!ans.v[i]) { put('Did not answer', i); continue; }
+      const v = score.v[i];
+      if (v === null || v === undefined) { put('Did not answer', i); continue; }
+      if (v >= min) put(`Recommended (${min}-10)`, i);
+      else if (v >= 7) put('Passive (7-8)', i);
+      else put('Detractor (0-6)', i);
+    }
+    const order = [`Recommended (${min}-10)`, 'Passive (7-8)', 'Detractor (0-6)', 'Did not answer'];
+    return order.filter(k => groups.has(k)).map(k => {
+      const a = groups.get(k);
+      return { ...a,
+               rate: pct(a.referrers, a.base),
+               successRate: pct(a.successful, a.base),
+               perCustomer: +(a.referrals / a.base).toFixed(2) };
+    });
+  },
+
   /** Second level of detail, for the two Sub-Channels that need it.
    *
    * Online splits into campaign-driven and unprompted, which convert very

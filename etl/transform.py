@@ -205,6 +205,109 @@ def _month_diff(later: pd.Series, earlier: pd.Series) -> pd.Series:
     return (later.dt.year - earlier.dt.year) * 12 + (later.dt.month - earlier.dt.month)
 
 
+def load_funnel_config(path: str) -> dict[str, Any]:
+    with open(path, "r", encoding="utf-8") as fh:
+        cfg = json.load(fh)
+    return {k: v for k, v in cfg.items() if not k.startswith("_")}
+
+
+def attach_funnel(
+    base: pd.DataFrame,
+    installs: pd.DataFrame,
+    nps: pd.DataFrame | None,
+    idv: pd.DataFrame | None,
+    cfg: dict[str, Any],
+) -> pd.DataFrame:
+    """Add the Cx Recommended and IDV stages to the customer base.
+
+    Both are measured per SSEID but the base is per customer, so a customer
+    counts as recommending / visited if ANY of their projects did. In practice
+    almost every customer has one project.
+
+    Coverage is carried separately from outcome (`nps_answered` vs
+    `cx_recommended`), because the two mean very different things: today only
+    8.1% of the base has answered the survey at all, while 91.5% of those who
+    did are promoters. Collapsing them would read as "customers will not
+    recommend us" when it actually says "we did not ask most of them".
+    """
+    rec_cfg = cfg.get("cx_recommended", {})
+    idv_cfg = cfg.get("idv", {})
+    min_score = rec_cfg.get("min_score", 9)
+    days_before = idv_cfg.get("days_before", 3)
+    days_after = idv_cfg.get("days_after", 3)
+
+    # --- Cx Recommended -----------------------------------------------------
+    base["nps_answered"] = False
+    base["cx_recommended"] = False
+    base["nps_score"] = pd.NA
+    if nps is not None and not nps.empty and "install_id" in installs.columns:
+        scored = installs[["customer_id", "install_id"]].merge(
+            nps[["install_id", "nps_score"]], on="install_id", how="inner")
+        scored["nps_score"] = pd.to_numeric(scored["nps_score"], errors="coerce")
+        per_cust = scored.groupby("customer_id", as_index=False)["nps_score"].max()
+        base = base.drop(columns=["nps_score"]).merge(per_cust, on="customer_id", how="left")
+        base["nps_answered"] = base["nps_score"].notna()
+        base["cx_recommended"] = base["nps_score"] >= min_score
+
+    # --- IDV ----------------------------------------------------------------
+    base["idv_done"] = False
+    base["idv_count"] = 0
+    if idv is not None and not idv.empty:
+        v = idv.copy()
+        v["visit_date"] = _to_date(v["visit_date"])
+        v = v.dropna(subset=["visit_date", "customer_id"])
+        v["customer_id"] = v["customer_id"].astype(str)
+        v = v.merge(base[["customer_id", "first_install_date"]], on="customer_id", how="inner")
+        delta = (v["visit_date"] - v["first_install_date"]).dt.days
+        v = v[(delta >= -days_before) & (delta <= days_after)]
+        if not v.empty:
+            counts = v.groupby("customer_id", as_index=False).agg(
+                idv_count=("visit_id", "nunique"))
+            base = base.drop(columns=["idv_count"]).merge(counts, on="customer_id", how="left")
+            base["idv_count"] = base["idv_count"].fillna(0).astype(int)
+            base["idv_done"] = base["idv_count"] > 0
+
+    return base
+
+
+def funnel_summary(base: pd.DataFrame, cfg: dict[str, Any]) -> dict:
+    """The stage-by-stage funnel, with non-response reported separately."""
+    n = len(base)
+    rec_cfg = cfg.get("cx_recommended", {})
+    idv_cfg = cfg.get("idv", {})
+
+    def block(mask: "pd.Series | bool", label: str) -> dict:
+        count = int(mask.sum()) if hasattr(mask, "sum") else 0
+        return {"stage": label, "customers": count,
+                "pct_of_base": round(100 * count / n, 2) if n else 0.0}
+
+    stages = [
+        {"stage": "Installed", "customers": n, "pct_of_base": 100.0},
+        block(base["nps_answered"], "Answered the survey"),
+        block(base["cx_recommended"], "Cx Recommended"),
+        block(base["idv_done"], "IDV done"),
+        block(base["is_referrer"], "Referrer"),
+        block(base["is_successful_referrer"], "Successful referrer"),
+    ]
+    answered = int(base["nps_answered"].sum())
+    return {
+        "stages": stages,
+        "config": {
+            "min_score": rec_cfg.get("min_score", 9),
+            "scale_max": rec_cfg.get("scale_max", 10),
+            "idv_task_keys": idv_cfg.get("task_keys", []),
+            "idv_days_before": idv_cfg.get("days_before", 3),
+            "idv_days_after": idv_cfg.get("days_after", 3),
+        },
+        "survey_coverage": {
+            "answered": answered,
+            "answered_pct": round(100 * answered / n, 2) if n else 0.0,
+            "recommended_of_answered": round(
+                100 * int(base["cx_recommended"].sum()) / answered, 2) if answered else 0.0,
+        },
+    }
+
+
 def build_customer_base(
     installs: pd.DataFrame,
     referrals: pd.DataFrame,

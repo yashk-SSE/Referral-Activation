@@ -56,6 +56,7 @@
   <nav class="tabs" role="tablist">
     <button role="tab" class="tab active" data-tab="overview">Overview</button>
     <button role="tab" class="tab" data-tab="activation">Sub-Channel</button>
+    <button role="tab" class="tab" data-tab="funnel">Funnel</button>
     <button role="tab" class="tab" data-tab="coverage">Coverage gap</button>
   </nav>
 
@@ -152,6 +153,29 @@
   </section>
 
   <!-- ---------------------------------------------------------------- -->
+  <section class="panel" data-panel="funnel" hidden>
+    <div class="card wide">
+      <div class="card-head">
+        <h2>Installed &rarr; Recommended &rarr; IDV &rarr; Referrer</h2>
+        <p>Each stage as a share of the installed base. <em>Answered the survey</em> is
+           shown in grey because it measures our reach, not the customer.</p>
+      </div>
+      <div class="chart" id="chFunnel"></div>
+      <p class="finding" id="funnelFinding"></p>
+    </div>
+
+    <div class="card wide">
+      <div class="card-head">
+        <h2>Does saying yes predict referring?</h2>
+        <p>Referral behaviour split by what the customer answered on the survey.
+           <em>Did not answer</em> is kept separate rather than folded in with
+           detractors &mdash; they are not the same population.</p>
+      </div>
+      <div id="tblNps" class="table-wrap"></div>
+    </div>
+  </section>
+
+  <!-- ---------------------------------------------------------------- -->
   <section class="panel" data-panel="coverage" hidden>
     <div class="card wide">
       <div class="card-head">
@@ -187,8 +211,8 @@
 
 <!-- vendored so the dashboard works behind corporate networks that block CDNs -->
 <script src="vendor/echarts.min.js?v=79a8b5a0"></script>
-<script src="js/data.js?v=0fd83cfc"></script>
-<script src="js/charts.js?v=987cc5da"></script>
-<script src="js/app.js?v=c5f63ae6"></script>
+<script src="js/data.js?v=dad7dcd5"></script>
+<script src="js/charts.js?v=2f805aa9"></script>
+<script src="js/app.js?v=5140ed18"></script>
 </body>
 </html>

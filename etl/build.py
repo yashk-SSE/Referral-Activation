@@ -33,6 +33,7 @@ PUBLIC_COLUMNS = [
     "cohort_month", "state", "city", "branch", "capacity_band",
     "install_count", "capacity_kw", "order_value",
     "is_referrer", "is_successful_referrer", "activated_by",
+    "nps_answered", "cx_recommended", "nps_score", "idv_done", "idv_count",
     "sub_channel_pre", "sub_channel_post", "sub_channel_detail",
     "first_timing_bucket", "first_tat_from_hoto",
     "referrals_total", "referrals_converted", "months_to_first_referral",
@@ -43,7 +44,7 @@ GATED_EXTRA = ["customer_id", "first_install_date", "first_referral_date",
 
 
 # ---------------------------------------------------------------------------
-def fetch_live(lookback_months: int) -> tuple[pd.DataFrame, pd.DataFrame]:
+def fetch_live(lookback_months: int, funnel_cfg: dict) -> tuple[pd.DataFrame, ...]:
     load_dotenv(os.path.join(ROOT, ".env"))
     mb = Metabase()
     db_id = int(os.environ.get("METABASE_DATABASE_ID", "0"))
@@ -61,7 +62,25 @@ def fetch_live(lookback_months: int) -> tuple[pd.DataFrame, pd.DataFrame]:
                       key="referral_id", lookback_months=lookback_months)
     )
     print(f"  referrals:     {len(referrals):,} rows")
-    return installs, referrals
+
+    # Cx Recommended -- small enough not to need pagination, but paginate anyway
+    # so a growing survey feed never silently truncates at 2000 rows.
+    nps = pd.DataFrame(
+        mb.query_file(os.path.join(SQL_DIR, "03_cx_recommended.sql"), db_id,
+                      key="install_id")
+    )
+    print(f"  nps responses: {len(nps):,} rows")
+
+    keys = funnel_cfg.get("idv", {}).get("task_keys", [])
+    idv = pd.DataFrame()
+    if keys:
+        quoted = ", ".join("'" + str(k).replace("'", "''") + "'" for k in keys)
+        idv = pd.DataFrame(
+            mb.query_file(os.path.join(SQL_DIR, "04_idv.sql"), db_id,
+                          key="visit_id", idv_keys=quoted)
+        )
+    print(f"  idv visits:    {len(idv):,} rows  (task keys: {', '.join(keys) or 'none'})")
+    return installs, referrals, nps, idv
 
 
 def encode_columns(df: pd.DataFrame) -> dict:
@@ -144,17 +163,20 @@ def main() -> int:
     ap.add_argument("--months", type=int, default=int(os.environ.get("LOOKBACK_MONTHS", "24")))
     args = ap.parse_args()
 
+    funnel_cfg = T.load_funnel_config(os.path.join(HERE, "funnel_config.json"))
+
     os.makedirs(DATA_DIR, exist_ok=True)
 
     if args.sample:
         import sample_data
         print(f"Generating synthetic data ({args.months} month window)...")
         installs, referrals = sample_data.generate(months=args.months)
+        nps, idv = pd.DataFrame(), pd.DataFrame()
         print(f"  installations: {len(installs):,} rows")
         print(f"  referrals:     {len(referrals):,} rows")
     else:
         try:
-            installs, referrals = fetch_live(args.months)
+            installs, referrals, nps, idv = fetch_live(args.months, funnel_cfg)
         except MetabaseError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             print("Tip: run `python etl/build.py --sample` to build against synthetic data.",
@@ -164,8 +186,16 @@ def main() -> int:
     as_of = date.today()
     sub_map = T.load_sub_channel_map(os.path.join(HERE, "sub_channel_map.json"))
     base, ref_detail, unmapped = T.build_customer_base(installs, referrals, sub_map, as_of)
+    base = T.attach_funnel(base, installs, nps, idv, funnel_cfg)
 
     summary = T.summarise(base, unmapped)
+    funnel = T.funnel_summary(base, funnel_cfg)
+    print(chr(10) + "Funnel:")
+    for st in funnel["stages"]:
+        print(f"    {st['stage']:<22} {st['customers']:>8,}  {st['pct_of_base']:>6.1f}% of installed")
+    cov = funnel["survey_coverage"]
+    print(f"    -> {cov['answered_pct']}% answered the survey; "
+          f"{cov['recommended_of_answered']}% of those scored >= {funnel['config']['min_score']}")
     print(
         f"\n{summary['customers']:,} customers / {summary['installs']:,} installs -> "
         f"{summary['referrers']:,} referrers ({summary['activation_rate']}%)"
@@ -190,6 +220,7 @@ def main() -> int:
     write_json(os.path.join(DATA_DIR, "aggregates.json"), {
         "summary": summary,
         "timing": T.timing_summary(base, ref_detail),
+        "funnel": funnel,
         "trajectory": T.trajectory(base, ref_detail),
     })
     write_json(os.path.join(DATA_DIR, "meta.json"), {
@@ -200,6 +231,7 @@ def main() -> int:
         "source": "sample" if args.sample else "metabase",
         "sub_channels": T.SUB_CHANNELS,
         "timing_buckets": T.TIMING_BUCKETS,
+        "funnel_config": funnel["config"],
         "unmapped_source_count": len(unmapped),
     }, gzip_too=False)
 
