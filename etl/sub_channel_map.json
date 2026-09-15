@@ -1,21 +1,29 @@
 {
   "_comment": [
-    "Sub-Channel under the Referral channel. Mapping is per Yash's spec (2026-09-15).",
+    "Sub-Channel under the Referral channel. Per Yash's spec (2026-09-15),",
+    "amended 2026-09-15 to route customer-initiated referrals to Online.",
     "",
-    "Matching normalises: lowercase + all whitespace removed. That makes the three",
-    "Ops spellings below collapse correctly, including the spaced variant.",
+    "Resolution order for each referral:",
+    "  1. referrer_role present and listed in role_map  -> that bucket",
+    "  2. referrer_role = Customer                      -> CApp if utm_campaign is",
+    "     customer_app, else Online",
+    "  3. referrer_role BLANK and source in online_sources -> Online",
+    "  4. anything else                                 -> Others",
     "",
-    "Online vs CApp both come from referrer_role = 'Customer' and are split on",
-    "utm_campaign. NOTE: in the warehouse today utm_campaign is 'customer_app' for",
-    "100% of Customer-role referrals, so Online currently resolves to zero rows.",
-    "The rule is kept because that could change.",
+    "Rule 3 is the amendment. referrer_role is populated only when an employee",
+    "took the referral (it is 100% collinear with referrer_email), so a blank role",
+    "on an Existing Cx referral means the customer raised it themselves -- whether",
+    "prompted by a campaign or not. 65% of these carry a utm_campaign across 499",
+    "distinct campaigns. The campaign/unprompted split is kept in sub_channel_detail.",
     "",
-    "Both referrer_role and utm_campaign have a TRAILING SPACE in their real",
-    "column names -- see sql/02_referrals.sql.",
+    "Matching normalises: lowercase + all whitespace removed, which folds the three",
+    "Ops spellings together.",
+    "",
+    "referrer_role, utm_campaign and referrer_email ALL have a TRAILING SPACE in",
+    "their real column names -- see sql/02_referrals.sql.",
     "",
     "'SC - Referral Calling' does not appear in the data yet; kept for when it does."
   ],
-
   "role_map": {
     "Sales": [
       "Solar Consultant",
@@ -34,9 +42,18 @@
       "Ops(project/liasing/O&M/others)"
     ]
   },
-
   "customer_role": "Customer",
   "capp_campaign": "customer_app",
-
-  "display_order": ["Sales", "Online", "CApp", "BTL", "Ops/AMC", "Others"]
+  "display_order": [
+    "Sales",
+    "Online",
+    "CApp",
+    "BTL",
+    "Ops/AMC",
+    "Others"
+  ],
+  "online_sources": [
+    "Referral - Existing Cx",
+    "Referral - New Cx"
+  ]
 }

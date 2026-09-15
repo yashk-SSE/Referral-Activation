@@ -219,16 +219,16 @@ const PANELS = {
       { key: 'convRate', label: 'Became orders', num: true, pct: true }
     ], stats, { sortKey: 'referrers' });
 
-    const others = AGG.othersBreakdown(idx);
-    chartOthers(others);
-    renderTable('tblOthers', [
-      { key: 'detail', label: 'Inside Others' },
+    const detail = AGG.subChannelDetail(idx);
+    chartDetail(detail);
+    renderTable('tblDetail', [
+      { key: 'detail', label: 'Detail' },
       { key: 'referrers', label: 'Referrers', num: true, bar: true },
-      { key: 'share', label: 'Share of Others', num: true, pct: true },
+      { key: 'share', label: 'Share', num: true, pct: true },
       { key: 'successful', label: 'Successful', num: true },
       { key: 'successShare', label: 'Success rate', num: true, pct: true },
       { key: 'referrals', label: 'Referrals', num: true }
-    ], others, { sortKey: 'referrers' });
+    ], detail, { sortKey: 'referrers' });
 
     const tat = AGG.preInstallTAT(idx);
     const rows = tat.bySubChannel.slice();

@@ -19,7 +19,7 @@ const C = {
 const charts = new Map();
 function mount(id, option) {
   const el = document.getElementById(id);
-  if (!el) return;
+  if (!el) { console.warn('mount: no element #' + id); return; }
   let c = charts.get(id);
   if (!c) { c = echarts.init(el, null, { renderer: 'canvas' }); charts.set(id, c); }
   c.setOption(option, { notMerge: true });
@@ -242,7 +242,7 @@ function chartGap(rows) {
 /* ---------------------------------------------------------------------- */
 function renderTable(elId, columns, rows, opts) {
   const el = document.getElementById(elId);
-  if (!el) return;
+  if (!el) { console.warn('renderTable: no element #' + elId); return; }
   opts = opts || {};
   if (!rows.length) { el.innerHTML = '<p class="muted">Nothing in range.</p>'; return; }
 
@@ -288,8 +288,9 @@ function renderTable(elId, columns, rows, opts) {
 /* inside Others                                                           */
 /* ---------------------------------------------------------------------- */
 const OTHERS_COLOR = {
-  'Customer, campaign-driven': '#17a2a2',
-  'Customer, unprompted': '#0891b2',
+  'Campaign-driven': '#17a2a2',
+  'Unprompted': '#0891b2',
+  'Customer app / in-app': '#8b5cf6',
   'SolarPro Partner (SPP)': '#8b5cf6',
   'Employee-led, role not captured': '#e0862c',
   'SSE employee': '#6366f1',
@@ -299,9 +300,9 @@ const OTHERS_COLOR = {
   'Unattributed (no role, no source)': '#b4bcc6'
 };
 
-function chartOthers(rows) {
+function chartDetail(rows) {
   const d = rows.slice().sort((a, b) => a.referrers - b.referrers);
-  mount('chOthers', Object.assign(BASE(), {
+  mount('chDetail', Object.assign(BASE(), {
     grid: { left: 8, right: 74, top: 12, bottom: 20, containLabel: true },
     legend: { show: false },
     tooltip: {

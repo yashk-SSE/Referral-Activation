@@ -33,7 +33,7 @@ PUBLIC_COLUMNS = [
     "cohort_month", "state", "city", "branch", "capacity_band",
     "install_count", "capacity_kw", "order_value",
     "is_referrer", "is_successful_referrer", "activated_by",
-    "sub_channel_pre", "sub_channel_post", "others_detail",
+    "sub_channel_pre", "sub_channel_post", "sub_channel_detail",
     "first_timing_bucket", "first_tat_from_hoto",
     "referrals_total", "referrals_converted", "months_to_first_referral",
     "days_to_first_referral", "pre_install_referrer", "maturity_months",

@@ -124,17 +124,18 @@
 
     <div class="card wide">
       <div class="card-head">
-        <h2>Inside Others</h2>
-        <p>Others is the largest bucket after Sales, and it is not one population.
-           Splitting it on the underlying referral source shows most of it is
-           explainable rather than unknown.</p>
-        <p class="caveat">Almost none of this is truly unknown. <em>Campaign-driven</em>
-           customers carry a <code>utm_campaign</code> (WhatsApp blasts, brand search,
-           promos); <em>unprompted</em> ones carry none. Both have no employee role, which
-           is why the spec&rsquo;s role-based rules cannot see them.</p>
+        <h2>Inside Online and Others</h2>
+        <p>The two Sub-Channels that are not one population. Online splits on whether
+           a <code>utm_campaign</code> prompted the referral; Others splits on the
+           underlying referral source.</p>
+        <p class="caveat"><em>Campaign-driven</em> referrals carry a
+           <code>utm_campaign</code> (WhatsApp blasts, brand search, promos);
+           <em>unprompted</em> ones carry none. What remains in Others is mostly routes
+           with no employee role by design &mdash; only the unattributed row is genuinely
+           unknown.</p>
       </div>
-      <div class="chart" id="chOthers"></div>
-      <div id="tblOthers" class="table-wrap"></div>
+      <div class="chart" id="chDetail"></div>
+      <div id="tblDetail" class="table-wrap"></div>
     </div>
 
     <div class="card wide">
@@ -186,8 +187,8 @@
 
 <!-- vendored so the dashboard works behind corporate networks that block CDNs -->
 <script src="vendor/echarts.min.js?v=79a8b5a0"></script>
-<script src="js/data.js?v=a115ae8a"></script>
-<script src="js/charts.js?v=ba88c76d"></script>
-<script src="js/app.js?v=181f690a"></script>
+<script src="js/data.js?v=0fd83cfc"></script>
+<script src="js/charts.js?v=987cc5da"></script>
+<script src="js/app.js?v=c5f63ae6"></script>
 </body>
 </html>

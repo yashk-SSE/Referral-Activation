@@ -59,6 +59,7 @@ def load_sub_channel_map(path: str) -> dict[str, Any]:
         "role": role_map,
         "customer_role": _norm(cfg.get("customer_role", "Customer")),
         "capp_campaign": _norm(cfg.get("capp_campaign", "customer_app")),
+        "online_sources": {_norm(v) for v in cfg.get("online_sources", [])},
     }
 
 
@@ -71,27 +72,37 @@ def _blank(value: Any) -> bool:
 
 
 def derive_sub_channel(
-    roles: pd.Series, campaigns: pd.Series, mapping: dict[str, Any]
+    roles: pd.Series, campaigns: pd.Series, sources: pd.Series,
+    mapping: dict[str, Any]
 ) -> tuple[pd.Series, Counter]:
-    """Resolve each referral to one Sub-Channel, driven by referrer_role.
+    """Resolve each referral to one Sub-Channel.
 
         Sales    role in Solar Consultant / LRM / Pre sales Team / SC - Referral Calling
         BTL      role = BTL
         Ops/AMC  role in CDM / NPS Sweep Team / Ops(...)
         CApp     role = Customer AND utm_campaign  = customer_app
-        Online   role = Customer AND utm_campaign != customer_app
-        Others   everything else, including a blank role
+        Online   role = Customer AND utm_campaign != customer_app, OR
+                 role BLANK AND source in online_sources
+        Others   everything else
 
-    `unmapped` records what landed in Others so the size and shape of that
-    bucket is visible rather than assumed.
+    The second Online arm is what captures customer-initiated referrals.
+    referrer_role is populated only when an employee took the referral -- it is
+    100% collinear with referrer_email -- so a blank role on an Existing Cx
+    referral means the customer raised it themselves.
+
+    `unmapped` records what still lands in Others, so that bucket's size and
+    shape stay visible rather than assumed.
     """
     unmapped: Counter = Counter()
     role_map = mapping["role"]
     customer_role = mapping["customer_role"]
     capp_campaign = mapping["capp_campaign"]
+    online_sources = mapping.get("online_sources", set())
 
-    def _one(role: Any, campaign: Any) -> str:
+    def _one(role: Any, campaign: Any, source: Any) -> str:
         if _blank(role):
+            if not _blank(source) and _norm(source) in online_sources:
+                return "Online"
             unmapped["(no referrer_role)"] += 1
             return "Others"
         key = _norm(role)
@@ -102,15 +113,15 @@ def derive_sub_channel(
         unmapped[f"role: {str(role).strip()}"] += 1
         return "Others"
 
-    values = [_one(r, c) for r, c in zip(roles, campaigns)]
+    values = [_one(r, c, s) for r, c, s in zip(roles, campaigns, sources)]
     return pd.Series(values, index=roles.index), unmapped
 
 
-def derive_others_detail(
+def derive_sub_channel_detail(
     sub_channels: pd.Series, roles: pd.Series, sources: pd.Series,
     campaigns: pd.Series
 ) -> pd.Series:
-    """Second level of detail for referrals that land in Others.
+    """Second level of detail for Online and Others.
 
     Others is a quarter of all referrers and is not one population: it mixes
     customer self-serve referrals, SolarPro partners, employee referrals, and
@@ -121,6 +132,12 @@ def derive_others_detail(
     Returns None for anything not in Others.
     """
     def _one(bucket: Any, role: Any, source: Any, campaign: Any) -> str | None:
+        if bucket == "Online":
+            # Whether marketing prompted it changes what you would do about it,
+            # and the two halves convert very differently.
+            if not _blank(role):
+                return "Customer app / in-app"
+            return ("Campaign-driven" if not _blank(campaign) else "Unprompted")
         if bucket != "Others":
             return None
         if not _blank(role):
@@ -135,13 +152,6 @@ def derive_others_detail(
             return "SSE employee"
         if "existingcxviaemp" in key:
             return "Employee-led, role not captured"
-        if "existingcx" in key or "newcx" in key:
-            # No employee role, so the customer raised it themselves -- but 65%
-            # of these carry a utm_campaign (499 distinct: WhatsApp blasts,
-            # brand search, IPL promos). Campaign-driven is not "self-serve",
-            # and lumping the two together hides what marketing actually moved.
-            return ("Customer, campaign-driven" if not _blank(campaign)
-                    else "Customer, unprompted")
         if "assure" in key:
             return "Assure customer"
         return f"Source: {str(source).strip()}"
@@ -219,15 +229,14 @@ def build_customer_base(
     ).fillna(referrals["referral_date"]) if "referral_ts" in referrals.columns         else referrals["referral_date"]
     referrals = referrals.dropna(subset=["referral_date", "referrer_customer_id"])
     referrals["referrer_customer_id"] = referrals["referrer_customer_id"].astype(str)
-    for col in ("referrer_role", "utm_campaign"):
+    for col in ("referrer_role", "utm_campaign", "referral_source"):
         if col not in referrals.columns:
             referrals[col] = None
     referrals["sub_channel"], unmapped = derive_sub_channel(
-        referrals["referrer_role"], referrals["utm_campaign"], mapping
+        referrals["referrer_role"], referrals["utm_campaign"],
+        referrals["referral_source"], mapping
     )
-    if "referral_source" not in referrals.columns:
-        referrals["referral_source"] = None
-    referrals["others_detail"] = derive_others_detail(
+    referrals["sub_channel_detail"] = derive_sub_channel_detail(
         referrals["sub_channel"], referrals["referrer_role"],
         referrals["referral_source"], referrals["utm_campaign"]
     )
@@ -301,7 +310,7 @@ def build_customer_base(
                     on="referrer_customer_id", how="left")
 
     # timing bucket of the FIRST referral -- what actually activated them
-    # Same reason as above: others_detail is null whenever the referral is not
+    # Same reason as above: sub_channel_detail is null whenever the referral is not
     # in the Others Sub-Channel, and groupby().first() would skip past those
     # nulls to a later referral -- overstating Others by ~30%.
     first_ref = ref.sort_values(
@@ -309,10 +318,10 @@ def build_customer_base(
     ).drop_duplicates(subset="referrer_customer_id", keep="first")
     agg = agg.merge(
         first_ref[["referrer_customer_id", "timing_bucket", "days_from_hoto",
-                   "others_detail"]].rename(
+                   "sub_channel_detail"]].rename(
             columns={"timing_bucket": "first_timing_bucket",
                      "days_from_hoto": "first_tat_from_hoto",
-                     "others_detail": "others_detail"}),
+                     "sub_channel_detail": "sub_channel_detail"}),
         on="referrer_customer_id", how="left")
 
     base = base.merge(agg, left_on="customer_id", right_on="referrer_customer_id",

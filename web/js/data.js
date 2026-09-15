@@ -242,15 +242,14 @@ const AGG = {
       .filter(r => r.before || r.after);
   },
 
-  /** What is actually inside the Others Sub-Channel.
+  /** Second level of detail, for the two Sub-Channels that need it.
    *
-   * Others is a quarter of all referrers and mixes populations that need
-   * different responses: customer self-serve referrals, SolarPro partners, SSE
-   * employees, and employee-led referrals where the role was simply never
-   * captured. As one bucket it reads as noise; split, most of it is explained.
+   * Online splits into campaign-driven and unprompted, which convert very
+   * differently. Others splits into the routes that have no employee role for
+   * structural reasons (partners, employees) versus genuinely missing data.
    */
-  othersBreakdown(idx) {
-    const col = DS.cols.others_detail;
+  subChannelDetail(idx) {
+    const col = DS.cols.sub_channel_detail;
     if (!col) return [];
     const isRef = DS.cols.is_referrer.v;
     const rt = DS.cols.referrals_total.v;

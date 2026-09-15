@@ -5,6 +5,8 @@ definition was a judgement call rather than a given, that is said explicitly.
 
 Source: SolarSquare Postgres via Metabase, **database id 2**.
 Last validated: **2026-09-15** against Jun–Aug 2026 (see [Validation](#validation)).
+The Jun–Aug Sub-Channel figures in that section predate the Online amendment in
+Section 5; the base, referrer and timing figures are unaffected by it.
 
 ---
 
@@ -106,7 +108,7 @@ spaced Ops variant onto the others.
 | Sub-Channel | Rule |
 |---|---|
 | **Sales** | `referrer_role` ∈ Solar Consultant, LRM, Pre sales Team, SC - Referral Calling |
-| **Online** | `referrer_role` = Customer **and** `utm_campaign` ≠ customer_app |
+| **Online** | `referrer_role` = Customer **and** `utm_campaign` ≠ customer_app, **or** `referrer_role` **blank** and source in `Referral - Existing Cx` / `Referral - New Cx` |
 | **CApp** | `referrer_role` = Customer **and** `utm_campaign` = customer_app |
 | **BTL** | `referrer_role` = BTL |
 | **Ops/AMC** | `referrer_role` ∈ CDM, NPS Sweep Team, Ops(Projects/liaising/O&M/Others), Ops(project/liasing/O&M/others), Ops ( project/ liaising /O&M /others ) |
@@ -119,33 +121,38 @@ Configured in `etl/sub_channel_map.json`; changing a bucket needs no code change
 **Both column names carry a trailing space** — `"referrer_role "` and
 `"utm_campaign "`. Without it: `column r.referrer_role does not exist`.
 
-**Online currently resolves to zero.** `utm_campaign` is `customer_app` for
-5,290 of 5,290 Customer-role referrals, so all of them go to CApp. The rule is
-kept in case that changes.
+**Online has a second arm (amended 2026-09-15).** The original rule alone
+resolved to zero: `utm_campaign` is `customer_app` for 5,290 of 5,290
+Customer-role referrals, so all of them went to CApp. Meanwhile ~5,000
+customer-initiated referrers sat in Others. `referrer_role` is populated only
+when an employee took the referral, so a **blank** role on an `Existing Cx`
+referral means the customer raised it themselves — campaign-prompted or not.
+Those are now Online, and the campaign split is kept in `sub_channel_detail`.
 
-**Others is 25.9% of referrers, and is broken out a second level.** It is
-dominated by referrals with a blank `referrer_role`. Role is blank precisely
-when no employee mediated the referral: `Referral - Existing Cx via Emp` is
-84.8% populated, `Referral - Existing Cx` is 0.0%. So the bulk of Others is
-customers referring on their own.
+**Others is now 2.9% of referrers** (631), down from 25.9% before the Online
+amendment moved customer-initiated referrals out of it.
 
-`others_detail` splits it using the underlying `referrals.source`, for
-referrers in the 24-month base:
+`sub_channel_detail` carries a second level for the two Sub-Channels that are
+not one population, for referrers in the 24-month base:
 
-| Inside Others | Referrers | Share | Success rate |
+| Sub-Channel | Detail | Referrers | Success rate |
 |---|---|---|---|
-| Customer, campaign-driven (no role, `Existing Cx`, **has** `utm_campaign`) | 2,734 | 48.6% | 33.1% |
-| Customer, unprompted (no role, `Existing Cx`, **no** `utm_campaign`) | 2,263 | 40.2% | 48.7% |
-| Employee-led, role not captured (`Existing Cx via Emp`, no role) | 542 | 9.6% | 70.7% |
-| HO Team & Others (role present, unassigned in the spec) | 66 | 1.2% | 72.7% |
-| Unattributed (no role, no source) | 17 | 0.3% | 29.4% |
-| Inbound cc team (role present, unassigned in the spec) | 3 | 0.1% | 100.0% |
-| SolarPro Partner (SPP) | 2 | 0.0% | 100.0% |
-| SSE employee | 1 | 0.0% | 100.0% |
+| Online | Campaign-driven (**has** `utm_campaign`) | 2,734 | 33.2% |
+| Online | Unprompted (**no** `utm_campaign`) | 2,263 | 48.7% |
+| Others | Employee-led, role not captured (`Existing Cx via Emp`, no role) | 542 | 70.7% |
+| Others | HO Team & Others (role present, unassigned in the spec) | 66 | 72.7% |
+| Others | Unattributed (no role, no source) | 17 | 29.4% |
+| Others | Inbound cc team (role present, unassigned in the spec) | 3 | 100.0% |
+| Others | SolarPro Partner (SPP) | 2 | 100.0% |
+| Others | SSE employee | 1 | 100.0% |
 
-Only 17 referrers are genuinely unattributed. SPP and SSE are near-zero because
-partners and employees are rarely installed customers themselves, so they drop
-out on the join to the base.
+Only **17 referrers** are genuinely unattributed. SPP and SSE are near-zero
+because partners and employees are rarely installed customers themselves, so
+they drop out on the join to the base.
+
+Unprompted referrers convert at 48.7% against 33.2% for campaign-driven —
+people who refer without being asked are materially better referrers, which the
+merged bucket hid.
 
 ### `referrer_email` adds nothing — it is collinear with `referrer_role`
 
@@ -164,12 +171,8 @@ Of the no-role `Referral - Existing Cx` referrals, **65.2%** carry a
 blasts such as `W_Transacted_Never_Referred_13June2026_Marathi`). Those were
 prompted by marketing, so they are split out rather than called self-serve.
 
-This is where the **Online** population actually lives. The spec's Online rule
-requires `referrer_role = 'Customer'`, which in this warehouse only ever
-co-occurs with `utm_campaign = 'customer_app'` — so Online resolves to zero
-while 2,734 campaign-driven referrers sit inside Others. Redefining Online as
-"blank role, `Existing Cx` source, `utm_campaign` present" would capture them;
-that is a decision for the business, not a silent change.
+This is where the **Online** population lives, and since 2026-09-15 the rule
+captures it — both the campaign-driven and the unprompted halves.
 
 `SC - Referral Calling` and the spaced Ops variant do not appear in the data
 yet; they are mapped for when they do.
