@@ -15,10 +15,18 @@
 > city, state, dates, capacity and the activation fields. Without SSEID or a
 > name, that sheet is not actionable for Sales.
 >
-> The full sheet requires `gated`, and `gated` requires an access-controlled
-> URL. Run it locally (`python etl/build.py --mode gated`) until the Cloudflare
-> Access step below is done. **Do not set `PRIVACY_MODE=gated` on a GitHub
-> Pages deployment.**
+> The full sheet requires `gated`, and `gated` must never be published to
+> Pages. Two ways to get it to Sales:
+>
+> 1. **Google Sheets, domain-restricted** — recommended, see Stage 2. The
+>    identity columns go to a Sheet shared only with `@solarsquare.in`; Google
+>    enforces that at sign-in, so a leaked link is not a leaked sheet. The
+>    dashboard links out to it.
+> 2. **Cloudflare Access** (Stage 3) — puts the whole dashboard behind SSO so
+>    the in-browser drill-down can carry identity too.
+>
+> The workflow refuses to publish anything but `mode=public`, and separately
+> refuses if any identifying column appears in the payload.
 
 
 Two stages: GitHub Pages now, Cloudflare Access when the URL needs to stop being
@@ -72,7 +80,59 @@ a new lead source in Metabase surfaces instead of silently inflating "Others".
 
 ---
 
-## Stage 2 — Cloudflare Access
+## Stage 2 — The named customer sheet (Google Sheets)
+
+This is what makes the drill-down actionable for Sales without putting names on
+a public URL.
+
+### 1. Service account
+
+Google Cloud console → **Create service account** → **Keys → Add key → JSON**.
+It needs no IAM roles; access comes from sharing the Sheet with it.
+Then **Enable the Google Sheets API** for that project.
+
+### 2. The Sheet
+
+Create an empty Google Sheet. Note its id from the URL
+(`docs.google.com/spreadsheets/d/<THIS>/edit`). Then share it twice:
+
+| Share with | Role | Why |
+|---|---|---|
+| the service account's `client_email` | **Editor** | so the job can write |
+| **Anyone at solarsquare.in with the link** | **Viewer** | so Sales can read |
+
+> Use *Anyone at solarsquare.in*, **not** *Anyone with the link*. The second is
+> public and defeats the entire point.
+
+### 3. Secrets
+
+Add to **Settings → Secrets and variables → Actions**:
+
+| secret | value |
+|---|---|
+| `GOOGLE_SHEET_ID` | the id from the URL |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | the whole JSON key file, pasted |
+
+The `sheet` job skips itself when `GOOGLE_SHEET_ID` is unset, so the rest of the
+pipeline keeps working until you are ready.
+
+### 4. Run it
+
+```bash
+python etl/build.py --mode gated
+python etl/export_sheet.py --months 3
+```
+
+Defaults to the last three complete months. `--months 6` or `--all` widen it.
+
+The `sheet` job in the workflow does the same on the daily schedule. It builds
+gated into `web/data`, pushes to Google, then **deletes `web/data`** so that
+build cannot reach the Pages artifact. It is a separate job from `build`, and
+`deploy` depends only on `build`.
+
+---
+
+## Stage 3 — Cloudflare Access
 
 Do this before the dashboard carries anything that should not be public, and
 before switching to `gated` mode.
@@ -110,7 +170,7 @@ Once gated, set `PRIVACY_MODE=gated` in the Cloudflare environment variables.
 The build then ships `customer_id`, city, and exact dates, which is what the
 non-referrer target lists need to be actionable.
 
-### 4. Retire the public URL
+### Retire the public URL
 
 Settings → Pages → **Unpublish site** on GitHub, so a stale public copy is not
 left serving yesterday's numbers to anyone holding the old link.

@@ -317,3 +317,14 @@ table.data tbody tr.total-row:hover { background: var(--accent-soft); }
 table.data tbody tr.total-row td { border-bottom: 2px solid var(--accent); }
 table.data td.metric-strong { font-weight: 650; color: var(--accent); }
 table.data td.metric-muted { color: var(--text-3); }
+
+
+/* ---- link out to the domain-restricted sheet --------------------------- */
+.sheet-link {
+  margin: 10px 0 0; padding: 10px 13px; border-radius: 8px;
+  background: var(--good-soft); border-left: 3px solid var(--good);
+  font-size: 13px;
+}
+.sheet-link a { color: var(--good); font-weight: 650; text-decoration: none; }
+.sheet-link a:hover { text-decoration: underline; }
+.sheet-link span { color: var(--text-2); font-size: 12px; display: block; margin-top: 2px; }

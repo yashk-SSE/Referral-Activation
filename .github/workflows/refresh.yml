@@ -98,6 +98,39 @@ jobs:
         with:
           path: web
 
+  # The named customer sheet. Built SEPARATELY in gated mode and pushed only to
+  # Google, never to Pages -- see docs/DEPLOY.md. Skipped unless the Google
+  # secrets are configured.
+  sheet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Build gated dataset and push to Google Sheets
+        env:
+          METABASE_URL: ${{ secrets.METABASE_URL }}
+          METABASE_API_KEY: ${{ secrets.METABASE_API_KEY }}
+          METABASE_DATABASE_ID: ${{ secrets.METABASE_DATABASE_ID }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          LOOKBACK_MONTHS: ${{ inputs.months || '24' }}
+        run: |
+          if [ -z "$GOOGLE_SHEET_ID" ]; then
+            echo "GOOGLE_SHEET_ID not set -- skipping the Google Sheets export."
+            exit 0
+          fi
+          python etl/build.py --mode gated --months "$LOOKBACK_MONTHS"
+          python etl/export_sheet.py --months 3
+      - name: Make sure the gated build cannot reach Pages
+        # This job builds identity columns into web/data. Nothing here uploads a
+        # Pages artifact, and this deletes them anyway so a future step cannot.
+        if: always()
+        run: rm -rf web/data
+
   deploy:
     needs: build
     runs-on: ubuntu-latest

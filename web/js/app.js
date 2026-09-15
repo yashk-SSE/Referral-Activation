@@ -334,6 +334,20 @@ const PANELS = {
           : '')
       : '';
 
+    // The public build has no identity columns by design; the named sheet
+    // lives in Google, restricted to the Workspace domain.
+    const link = document.getElementById('sheetLink');
+    if (DS.meta.sheet_url && missing.length) {
+      link.hidden = false;
+      link.innerHTML =
+        '<a href="' + DS.meta.sheet_url + '" target="_blank" rel="noopener">' +
+        'Open the full customer sheet &rarr;</a>' +
+        '<span> SSEID, name, SC and Installation Champion live there, ' +
+        'restricted to the SolarSquare Google Workspace.</span>';
+    } else {
+      link.hidden = true;
+    }
+
     const mix = AGG.subChannelByWindow(idx);
     chartWindowMix(mix);
     renderTable('tblWindowTat', [

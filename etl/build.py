@@ -250,6 +250,10 @@ def main() -> int:
         "timing_buckets": T.TIMING_BUCKETS,
         "funnel_config": funnel["config"],
         "activation": {"start": act_cfg["start"], "end": act_cfg["end"]},
+        # Surfaced so the public dashboard can link to the domain-restricted
+        # sheet that carries the identity columns it deliberately does not.
+        "sheet_url": (f"https://docs.google.com/spreadsheets/d/{os.environ['GOOGLE_SHEET_ID']}"
+                      if os.environ.get("GOOGLE_SHEET_ID") else None),
         "unmapped_source_count": len(unmapped),
     }, gzip_too=False)
 
