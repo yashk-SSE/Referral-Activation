@@ -165,6 +165,11 @@ def build_customer_base(
         installs[col] = pd.to_numeric(installs.get(col), errors="coerce")
 
     referrals["referral_date"] = _to_date(referrals["referral_date"])
+    # Order on the real timestamp, falling back to the date when absent, with
+    # referral_id as a final tie-break so the result is reproducible run to run.
+    referrals["referral_ts"] = pd.to_datetime(
+        referrals.get("referral_ts"), errors="coerce"
+    ).fillna(referrals["referral_date"]) if "referral_ts" in referrals.columns         else referrals["referral_date"]
     referrals = referrals.dropna(subset=["referral_date", "referrer_customer_id"])
     referrals["referrer_customer_id"] = referrals["referrer_customer_id"].astype(str)
     for col in ("referrer_role", "utm_campaign"):
@@ -197,7 +202,7 @@ def build_customer_base(
     base = rollup.merge(first[["customer_id", *attrs]], on="customer_id", how="left")
 
     # --- referral timing, which needs the customer's own milestone dates ----
-    referrals = referrals.sort_values("referral_date")
+    referrals = referrals.sort_values(["referral_ts", "referral_id"], kind="mergesort")
     referrals["referral_rank"] = referrals.groupby("referrer_customer_id").cumcount() + 1
     ref = referrals.merge(
         base[["customer_id", "first_install_date", "hoto_date", "commissioning_date"]],
@@ -226,7 +231,7 @@ def build_customer_base(
         """Sub-Channel of the earliest referral in `frame`, per customer."""
         if frame.empty:
             return pd.DataFrame(columns=["referrer_customer_id", label])
-        firsts = frame.sort_values("referral_date").groupby(
+        firsts = frame.sort_values(["referral_ts", "referral_id"], kind="mergesort").groupby(
             "referrer_customer_id", as_index=False).first()
         return firsts[["referrer_customer_id", "sub_channel"]].rename(
             columns={"sub_channel": label})
@@ -239,7 +244,7 @@ def build_customer_base(
                     on="referrer_customer_id", how="left")
 
     # timing bucket of the FIRST referral -- what actually activated them
-    first_ref = ref.sort_values("referral_date").groupby(
+    first_ref = ref.sort_values(["referral_ts", "referral_id"], kind="mergesort").groupby(
         "referrer_customer_id", as_index=False).first()
     agg = agg.merge(
         first_ref[["referrer_customer_id", "timing_bucket", "days_from_hoto"]].rename(

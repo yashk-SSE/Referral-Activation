@@ -34,6 +34,14 @@ the same rows. At ≤25k customers this is a few milliseconds of work.
 
 ---
 
+## Definitions
+
+Every metric — installation, referrer, successful referrer, Sub-Channel, the
+timing buckets, the lookback window — is defined in
+**[docs/DEFINITIONS.md](docs/DEFINITIONS.md)**, along with the validation run
+that reconciles the pipeline against independent SQL. Read that before quoting
+a number to anyone.
+
 ## Quick start (no Metabase needed)
 
 ```bash

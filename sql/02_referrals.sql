@@ -22,6 +22,13 @@ SELECT
     (CAST(r."createdAt" AS timestamp)
         AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date
                                                  AS referral_date,
+    -- Full timestamp, kept purely for ordering. 5,864 customers have more than
+    -- one referral on their earliest DATE and 220 of those carry different
+    -- referrer roles, so "the first referral" is ambiguous unless ordered by
+    -- the actual time. Date is still what the timing buckets are measured in.
+    (CAST(r."createdAt" AS timestamp)
+        AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')
+                                                 AS referral_ts,
     NULLIF(TRIM(r."source"), '')                 AS referral_source,
     NULLIF(TRIM(r."referrer_role "), '')         AS referrer_role,
     NULLIF(TRIM(r."utm_campaign "), '')          AS utm_campaign,
