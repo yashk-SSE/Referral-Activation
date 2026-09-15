@@ -302,11 +302,12 @@ const PANELS = {
       'their installation &mdash; the span covering installation, commissioning, subsidy ' +
       'disbursal and the first zero bill.';
 
-    const rows = AGG.cityTable(idx, 'city');
+    // Cluster is the ops accountability unit and matches the Cluster filter.
+    const rows = AGG.cityTable(idx, 'branch');
     const pctCol = (k, l) => ({ key: k, label: l, num: true, pct: true });
     const numCol = (k, l, metric) => ({ key: k, label: l, num: true, metric: metric || k });
     renderTable('tblCity', [
-      { key: 'name', label: 'City' },
+      { key: 'name', label: 'Cluster' },
       numCol('installed', 'Installed base'),
       numCol('cx_recommended', 'Cx Recommended'),
       numCol('idv', 'IDV visits'),
@@ -458,10 +459,12 @@ loadData().then(() => {
   // Show when the data was actually pulled, with the time -- a date alone does
   // not tell anyone whether this morning's refresh has landed.
   const gen = DS.meta.generated_at || '';
+  // Always render in IST and say so. The build runs on a UTC runner, so
+  // without an explicit zone the stamp reads 5.5 hours stale to this team.
   const stamp = gen
     ? new Date(gen).toLocaleString('en-IN',
-        { day: '2-digit', month: 'short', year: 'numeric',
-          hour: '2-digit', minute: '2-digit', hour12: true })
+        { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short',
+          year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) + ' IST'
     : '—';
   document.getElementById('refreshedAt').textContent = stamp;
 

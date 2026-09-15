@@ -14,7 +14,7 @@ import gzip
 import json
 import os
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 import pandas as pd
 
@@ -241,7 +241,9 @@ def main() -> int:
         "trajectory": T.trajectory(base, ref_detail),
     })
     write_json(os.path.join(DATA_DIR, "meta.json"), {
-        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        # UTC-aware: GitHub runners are UTC and the team reads IST, so a naive
+        # local timestamp showed a 5.5h-stale refresh time on the live site.
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "as_of": as_of.isoformat(),
         "mode": args.mode,
         "lookback_months": args.months,
