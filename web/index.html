@@ -128,9 +128,10 @@
         <p>Others is the largest bucket after Sales, and it is not one population.
            Splitting it on the underlying referral source shows most of it is
            explainable rather than unknown.</p>
-        <p class="caveat">Only the last row is genuinely unattributed. The rest are
-           real routes that simply have no employee role attached &mdash; chiefly
-           customers referring on their own, and SolarPro partners.</p>
+        <p class="caveat">Almost none of this is truly unknown. <em>Campaign-driven</em>
+           customers carry a <code>utm_campaign</code> (WhatsApp blasts, brand search,
+           promos); <em>unprompted</em> ones carry none. Both have no employee role, which
+           is why the spec&rsquo;s role-based rules cannot see them.</p>
       </div>
       <div class="chart" id="chOthers"></div>
       <div id="tblOthers" class="table-wrap"></div>
@@ -186,7 +187,7 @@
 <!-- vendored so the dashboard works behind corporate networks that block CDNs -->
 <script src="vendor/echarts.min.js?v=79a8b5a0"></script>
 <script src="js/data.js?v=a115ae8a"></script>
-<script src="js/charts.js?v=e9d745db"></script>
+<script src="js/charts.js?v=ba88c76d"></script>
 <script src="js/app.js?v=181f690a"></script>
 </body>
 </html>

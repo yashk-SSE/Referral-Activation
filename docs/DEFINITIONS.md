@@ -134,7 +134,8 @@ referrers in the 24-month base:
 
 | Inside Others | Referrers | Share | Success rate |
 |---|---|---|---|
-| Customer self-serve (`Referral - Existing Cx` / `New Cx`, no role) | 4,996 | 88.8% | 40.2% |
+| Customer, campaign-driven (no role, `Existing Cx`, **has** `utm_campaign`) | 2,734 | 48.6% | 33.1% |
+| Customer, unprompted (no role, `Existing Cx`, **no** `utm_campaign`) | 2,263 | 40.2% | 48.7% |
 | Employee-led, role not captured (`Existing Cx via Emp`, no role) | 542 | 9.6% | 70.7% |
 | HO Team & Others (role present, unassigned in the spec) | 66 | 1.2% | 72.7% |
 | Unattributed (no role, no source) | 17 | 0.3% | 29.4% |
@@ -145,6 +146,30 @@ referrers in the 24-month base:
 Only 17 referrers are genuinely unattributed. SPP and SSE are near-zero because
 partners and employees are rarely installed customers themselves, so they drop
 out on the join to the base.
+
+### `referrer_email` adds nothing — it is collinear with `referrer_role`
+
+Over 24 months, `referrer_email` is populated for **100.0%** of referrals that
+have a `referrer_role` and **0.0%** of those that do not, across every role
+value. Both fields record the employee who took the referral, so the email
+cannot be used to recover attribution where the role is missing. It does
+independently confirm that a blank role really does mean no employee was
+involved.
+
+### Campaign-driven is not self-serve
+
+Of the no-role `Referral - Existing Cx` referrals, **65.2%** carry a
+`utm_campaign` — 15,882 referrals across **499 distinct campaigns**
+(`whatsapp_bot`, `Referral_Registration_Done`, `iplbonanza`, and ~490 WhatsApp
+blasts such as `W_Transacted_Never_Referred_13June2026_Marathi`). Those were
+prompted by marketing, so they are split out rather than called self-serve.
+
+This is where the **Online** population actually lives. The spec's Online rule
+requires `referrer_role = 'Customer'`, which in this warehouse only ever
+co-occurs with `utm_campaign = 'customer_app'` — so Online resolves to zero
+while 2,734 campaign-driven referrers sit inside Others. Redefining Online as
+"blank role, `Existing Cx` source, `utm_campaign` present" would capture them;
+that is a decision for the business, not a silent change.
 
 `SC - Referral Calling` and the spaced Ops variant do not appear in the data
 yet; they are mapped for when they do.

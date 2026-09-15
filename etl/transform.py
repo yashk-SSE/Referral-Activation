@@ -107,7 +107,8 @@ def derive_sub_channel(
 
 
 def derive_others_detail(
-    sub_channels: pd.Series, roles: pd.Series, sources: pd.Series
+    sub_channels: pd.Series, roles: pd.Series, sources: pd.Series,
+    campaigns: pd.Series
 ) -> pd.Series:
     """Second level of detail for referrals that land in Others.
 
@@ -119,7 +120,7 @@ def derive_others_detail(
 
     Returns None for anything not in Others.
     """
-    def _one(bucket: Any, role: Any, source: Any) -> str | None:
+    def _one(bucket: Any, role: Any, source: Any, campaign: Any) -> str | None:
         if bucket != "Others":
             return None
         if not _blank(role):
@@ -135,13 +136,19 @@ def derive_others_detail(
         if "existingcxviaemp" in key:
             return "Employee-led, role not captured"
         if "existingcx" in key or "newcx" in key:
-            return "Customer self-serve"
+            # No employee role, so the customer raised it themselves -- but 65%
+            # of these carry a utm_campaign (499 distinct: WhatsApp blasts,
+            # brand search, IPL promos). Campaign-driven is not "self-serve",
+            # and lumping the two together hides what marketing actually moved.
+            return ("Customer, campaign-driven" if not _blank(campaign)
+                    else "Customer, unprompted")
         if "assure" in key:
             return "Assure customer"
         return f"Source: {str(source).strip()}"
 
     return pd.Series(
-        [_one(b, r, s) for b, r, s in zip(sub_channels, roles, sources)],
+        [_one(b, r, s, c)
+         for b, r, s, c in zip(sub_channels, roles, sources, campaigns)],
         index=sub_channels.index,
     )
 
@@ -221,7 +228,8 @@ def build_customer_base(
     if "referral_source" not in referrals.columns:
         referrals["referral_source"] = None
     referrals["others_detail"] = derive_others_detail(
-        referrals["sub_channel"], referrals["referrer_role"], referrals["referral_source"]
+        referrals["sub_channel"], referrals["referrer_role"],
+        referrals["referral_source"], referrals["utm_campaign"]
     )
     if "converted_date" in referrals.columns:
         referrals["converted_date"] = _to_date(referrals["converted_date"])

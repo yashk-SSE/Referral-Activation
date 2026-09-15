@@ -288,7 +288,8 @@ function renderTable(elId, columns, rows, opts) {
 /* inside Others                                                           */
 /* ---------------------------------------------------------------------- */
 const OTHERS_COLOR = {
-  'Customer self-serve': '#17a2a2',
+  'Customer, campaign-driven': '#17a2a2',
+  'Customer, unprompted': '#0891b2',
   'SolarPro Partner (SPP)': '#8b5cf6',
   'Employee-led, role not captured': '#e0862c',
   'SSE employee': '#6366f1',
