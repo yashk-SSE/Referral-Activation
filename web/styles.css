@@ -1,18 +1,25 @@
 :root {
   color-scheme: light;
-  --bg: #f6f7f9;
+  /* SolarSquare palette, carried over from the Referral Dashboards project so
+     the two read as one family. */
+  --bg: #f5f4f0;
   --surface: #ffffff;
-  --surface-2: #fafbfc;
-  --border: #e3e6ea;
-  --border-strong: #cbd2da;
-  --text: #16191d;
-  --text-2: #5a6470;
-  --text-3: #8b96a3;
-  --accent: #3b6fd4;
-  --accent-soft: #eaf0fc;
-  --good: #17845a;
-  --bad: #c0392f;
-  --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 1px 3px rgba(16, 24, 40, .06);
+  --surface-2: #faf9f6;
+  --border: rgba(0, 0, 0, .07);
+  --border-strong: rgba(0, 0, 0, .16);
+  --text: #1c1c1a;
+  --text-2: #55534d;
+  --text-3: #8a8780;
+  --accent: #1a56db;
+  --accent-soft: #dbeafe;
+  --good: #166534;
+  --good-soft: #dcfce7;
+  --bad: #991b1b;
+  --bad-soft: #fee2e2;
+  --amber: #92400e;
+  --amber-soft: #fef3c7;
+  --solar: #f59e0b;
+  --shadow: 0 1px 2px rgba(28, 28, 26, .04), 0 1px 3px rgba(28, 28, 26, .06);
   --radius: 10px;
 }
 * { box-sizing: border-box; }
@@ -32,16 +39,19 @@ h1, h2 { margin: 0; font-weight: 600; letter-spacing: -.01em; }
 .topbar {
   display: flex; align-items: center; justify-content: space-between;
   gap: 16px; flex-wrap: wrap;
-  padding: 14px 24px;
+  padding: 13px 24px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 0 rgba(0,0,0,.02);
 }
+.topbar::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--solar) 55%, var(--good) 100%);
+}
+body { position: relative; }
 .brand { display: flex; align-items: center; gap: 12px; }
-.mark {
-  width: 30px; height: 30px; border-radius: 8px; flex: none;
-  background: linear-gradient(135deg, var(--accent), #8b5cf6);
-}
-.topbar h1 { font-size: 16px; }
+.logo-img { height: 26px; width: auto; flex: none; }
+.topbar h1 { font-size: 16px; letter-spacing: -.015em; }
 .sub { margin: 1px 0 0; font-size: 12px; color: var(--text-2); }
 .stamp { display: flex; align-items: center; gap: 10px; font-size: 12px; }
 .muted { color: var(--text-3); }
@@ -136,8 +146,17 @@ h1, h2 { margin: 0; font-weight: 600; letter-spacing: -.01em; }
 }
 .kpi {
   background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 12px 14px; box-shadow: var(--shadow);
+  border-radius: var(--radius); padding: 12px 14px 12px 16px;
+  box-shadow: var(--shadow); position: relative; overflow: hidden;
 }
+.kpi::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: var(--accent); opacity: .85;
+}
+.kpi.k-good::before { background: var(--good); }
+.kpi.k-warn::before { background: var(--solar); }
+.kpi.k-flat::before { background: var(--text-3); }
+.kpi .k-value { color: var(--text); }
 .kpi .k-label {
   font-size: 10px; font-weight: 600; text-transform: uppercase;
   letter-spacing: .05em; color: var(--text-3);
@@ -159,7 +178,8 @@ h1, h2 { margin: 0; font-weight: 600; letter-spacing: -.01em; }
   border-bottom: 2px solid transparent; margin-bottom: -1px;
 }
 .tab:hover { color: var(--text); }
-.tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 650; }
+.tabs { background: var(--surface); }
 
 /* ---- panels ----------------------------------------------------------- */
 .panel {
@@ -245,3 +265,55 @@ table.data td.drill::after {
 }
 table.data td.drill:hover::after { opacity: .7; }
 table.data td.drilled { background: var(--good); color: #fff; }
+
+/* ---- refreshed stamp --------------------------------------------------- */
+.refreshed { text-align: right; line-height: 1.25; }
+.r-label {
+  display: block; font-size: 9.5px; font-weight: 600; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--text-3);
+}
+.r-value { font-size: 12.5px; color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* ---- date presets ------------------------------------------------------ */
+.presets { display: flex; gap: 0; border: 1px solid var(--border-strong); border-radius: 7px; overflow: hidden; }
+.presets button {
+  font: inherit; font-size: 12.5px; padding: 5px 10px; cursor: pointer;
+  border: none; border-right: 1px solid var(--border);
+  background: var(--surface); color: var(--text-2); white-space: nowrap;
+}
+.presets button:last-child { border-right: none; }
+.presets button:hover { background: var(--accent-soft); color: var(--accent); }
+.presets button.on { background: var(--accent); color: #fff; font-weight: 600; }
+.date-input {
+  font: inherit; font-size: 13px; padding: 4px 8px;
+  border: 1px solid var(--border-strong); border-radius: 7px;
+  background: var(--surface); color: var(--text);
+}
+
+/* ---- toggle ------------------------------------------------------------ */
+.toggle {
+  display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+  font: inherit; font-size: 12.5px; font-weight: 600;
+  padding: 4px 11px 4px 5px; border-radius: 999px;
+  border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-2);
+}
+.toggle .knob {
+  width: 26px; height: 15px; border-radius: 999px; background: var(--border-strong);
+  position: relative; transition: background .15s ease;
+}
+.toggle .knob::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px;
+  border-radius: 50%; background: #fff; transition: transform .15s ease;
+}
+.toggle[aria-checked="true"] { border-color: var(--good); color: var(--good); }
+.toggle[aria-checked="true"] .knob { background: var(--good); }
+.toggle[aria-checked="true"] .knob::after { transform: translateX(11px); }
+
+/* ---- table emphasis ---------------------------------------------------- */
+table.data tbody tr.total-row {
+  background: var(--accent-soft); font-weight: 650;
+}
+table.data tbody tr.total-row:hover { background: var(--accent-soft); }
+table.data tbody tr.total-row td { border-bottom: 2px solid var(--accent); }
+table.data td.metric-strong { font-weight: 650; color: var(--accent); }
+table.data td.metric-muted { color: var(--text-3); }

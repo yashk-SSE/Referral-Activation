@@ -145,6 +145,7 @@ Set with `--mode gated` locally, or the `mode` input on a manual workflow run.
 
 | tab | question it answers |
 |---|---|
+| **Referrer Activation** | The Sales-facing view: per-city activation inside the −3…+90 day window, with an India total. Click any number to download that list of customers |
 | **Overview** | How many installed customers become referrers, when their first referral lands relative to their own installation, and whether they refer again |
 | **Sub-Channel** | Sales / Online / CApp / BTL / Ops/AMC / Others — who activated them, each Sub-Channel's quality, the before-vs-after-installation split, and how fast the referral is captured after HOTO |
 | **Coverage gap** | The never-referred base by state and cluster, ranked by how many customers are still untapped |

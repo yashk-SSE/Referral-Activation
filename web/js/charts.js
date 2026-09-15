@@ -260,7 +260,9 @@ function renderTable(elId, columns, rows, opts) {
     `<th class="${c.num ? 'num' : ''}" data-key="${c.key}">${c.label}${state.key === c.key ? (state.dir < 0 ? ' ▾' : ' ▴') : ''}</th>`
   ).join('');
 
-  const body = sorted.map(r => '<tr>' + columns.map(c => {
+  const body = sorted.map(r => {
+    const rowCls = opts.totalRow && String(r.name) === opts.totalRow ? ' class="total-row"' : '';
+    return '<tr' + rowCls + '>' + columns.map(c => {
     let v = r[c.key];
     let cls = c.num ? 'num' : '';
     let inner;
@@ -279,7 +281,7 @@ function renderTable(elId, columns, rows, opts) {
       return `<td class="${cls} bar-cell"${attrs}><i style="width:${w}%"></i><span>${inner}</span></td>`;
     }
     return `<td class="${cls}"${attrs}>${inner}</td>`;
-  }).join('') + '</tr>').join('');
+  }).join('') + '</tr>'; }).join('');
 
   el.innerHTML = `<table class="data"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 

@@ -4,21 +4,24 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Referral Cohorts</title>
-<link rel="stylesheet" href="styles.css?v=2f82735a">
+<link rel="stylesheet" href="styles.css?v=af0bf400">
 </head>
 <body>
 
 <header class="topbar">
   <div class="brand">
-    <span class="mark"></span>
+    <img src="sse-logo.png" alt="SolarSquare" class="logo-img">
     <div>
-      <h1>Referral Cohorts</h1>
+      <h1>Referral Activation</h1>
       <p class="sub">How the installed base turns into referrers</p>
     </div>
   </div>
   <div class="stamp">
     <span id="modeBadge" class="badge">&nbsp;</span>
-    <span id="asOf" class="muted"></span>
+    <div class="refreshed">
+      <span class="r-label">Last refreshed</span>
+      <span id="refreshedAt" class="r-value">&mdash;</span>
+    </div>
   </div>
 </header>
 
@@ -29,41 +32,47 @@
 
   <section class="filters" aria-label="Filters">
     <div class="filter">
-      <label for="fCohortFrom">Installed from</label>
-      <select id="fCohortFrom"></select>
+      <label>Installation date</label>
+      <div class="presets" id="datePresets">
+        <button type="button" data-preset="7d">Last 7 days</button>
+        <button type="button" data-preset="tm">This month</button>
+        <button type="button" data-preset="pm">Previous month</button>
+        <button type="button" data-preset="3m" class="on">Last 3 months</button>
+        <button type="button" data-preset="6m">Last 6 months</button>
+        <button type="button" data-preset="all">All</button>
+      </div>
     </div>
     <div class="filter">
-      <label for="fCohortTo">to</label>
-      <select id="fCohortTo"></select>
+      <label for="fFrom">From</label>
+      <input type="date" id="fFrom" class="date-input">
+    </div>
+    <div class="filter">
+      <label for="fTo">To</label>
+      <input type="date" id="fTo" class="date-input">
     </div>
     <div class="filter"><label>State</label><div id="fState" class="ms"></div></div>
-    <div class="filter"><label>City</label><div id="fCity" class="ms"></div></div>
     <div class="filter"><label>Cluster</label><div id="fBranch" class="ms"></div></div>
     <div class="filter grow-end">
-      <label for="fMaturity">Minimum age</label>
-      <select id="fMaturity">
-        <option value="0">Any age</option>
-        <option value="3">3+ months</option>
-        <option value="6">6+ months</option>
-        <option value="12">12+ months</option>
-      </select>
+      <label for="drillToggle">Click-to-download</label>
+      <button id="drillToggle" class="toggle" type="button" role="switch" aria-checked="true">
+        <span class="knob"></span><span class="t-label">On</span>
+      </button>
     </div>
-    <button id="last3" class="btn-reset" type="button" title="Jun, Jul, Aug when sitting in September">Last 3 months</button>
     <button id="resetFilters" class="btn-reset" type="button">Reset</button>
   </section>
 
   <section class="kpis" id="kpis"></section>
 
   <nav class="tabs" role="tablist">
-    <button role="tab" class="tab active" data-tab="overview">Overview</button>
+    <button role="tab" class="tab active" data-tab="sales">Referrer Activation</button>
+    <button role="tab" class="tab" data-tab="overview">Overview</button>
     <button role="tab" class="tab" data-tab="activation">Sub-Channel</button>
-    <button role="tab" class="tab" data-tab="sales">Sales tracker</button>
     <button role="tab" class="tab" data-tab="funnel">Funnel</button>
     <button role="tab" class="tab" data-tab="coverage">Coverage gap</button>
   </nav>
 
   <!-- ---------------------------------------------------------------- -->
-  <section class="panel" data-panel="overview">
+  <section class="panel" data-panel="overview" hidden>
     <div class="card wide">
       <div class="card-head">
         <h2>When the first referral comes in</h2>
@@ -155,15 +164,16 @@
   </section>
 
   <!-- ---------------------------------------------------------------- -->
-  <section class="panel" data-panel="sales" hidden>
+  <section class="panel" data-panel="sales">
     <div class="card wide">
       <div class="card-head">
-        <h2>Activation by city</h2>
+        <h2>Referrer activation by city</h2>
         <p id="salesWindowNote"></p>
         <p class="caveat">Referrals before the window start are treated as a
            <strong>blindspot</strong> and excluded from every figure here.
            <strong>Click any number to download that exact list of customers</strong>,
-           with the filters above applied.</p>
+           with the filters above applied. Turn <em>Click-to-download</em> off to browse
+           without triggering files.</p>
       </div>
       <div id="tblCity" class="table-wrap scroll"></div>
       <p class="finding" id="salesFinding"></p>
@@ -247,9 +257,9 @@
 
 <!-- vendored so the dashboard works behind corporate networks that block CDNs -->
 <script src="vendor/echarts.min.js?v=79a8b5a0"></script>
-<script src="js/data.js?v=9a96b215"></script>
-<script src="js/charts.js?v=b3c4d20e"></script>
-<script src="js/export.js?v=55816084"></script>
-<script src="js/app.js?v=c1c12c7a"></script>
+<script src="js/data.js?v=c76b80ce"></script>
+<script src="js/charts.js?v=d2a659c0"></script>
+<script src="js/export.js?v=78065135"></script>
+<script src="js/app.js?v=56f5efa5"></script>
 </body>
 </html>

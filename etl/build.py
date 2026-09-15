@@ -30,7 +30,7 @@ SQL_DIR = os.path.join(ROOT, "sql")
 
 # Columns shipped to the browser at row level, by privacy tier.
 PUBLIC_COLUMNS = [
-    "cohort_month", "state", "city", "branch", "capacity_band",
+    "cohort_month", "first_install_date", "state", "city", "branch", "capacity_band",
     "install_count", "capacity_kw", "order_value",
     "is_referrer", "is_successful_referrer", "activated_by",
     "nps_answered", "cx_recommended", "idv_done",
@@ -43,7 +43,7 @@ PUBLIC_COLUMNS = [
 ]
 # Drill-down fields. These carry customer and employee identity, so they ship
 # only in gated mode -- see docs/DEPLOY.md before publishing with them on.
-GATED_EXTRA = ["customer_id", "first_install_date", "first_referral_date",
+GATED_EXTRA = ["customer_id", "first_referral_date",
                "hoto_date", "commissioning_date",
                "install_id", "customer_name", "order_booked_date",
                "sc_name", "sc_email", "installation_champion",

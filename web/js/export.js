@@ -100,6 +100,7 @@ function rowsForMetric(rows, metric) {
     installed: () => true,
     referrer_activated: i => DS.cols.referrer_activated.v[i],
     successful_activated: i => DS.cols.successful_activated.v[i],
+    not_referred: i => !DS.cols.referrer_activated.v[i],
     leads: i => (DS.cols.leads_in_window.v[i] || 0) > 0,
     orders: i => (DS.cols.orders_in_window.v[i] || 0) > 0,
     cx_recommended: i => DS.cols.cx_recommended && DS.cols.cx_recommended.v[i],

@@ -1,5 +1,26 @@
 # Deploying
 
+> **Read this first.** The dashboard ships in two privacy tiers and they are not
+> interchangeable.
+>
+> | | `public` | `gated` |
+> |---|---|---|
+> | Aggregates, charts, city table | yes | yes |
+> | Drill-down CSV | non-identifying columns only | **full sheet** |
+> | SSEID, customer name, SC name/email, Installation Champion | **omitted** | included |
+>
+> **GitHub Pages is world-readable — even from a private repo.** So the Pages
+> deployment must be `public`, and it is: the workflow builds `public` unless
+> told otherwise. The drill-down still works there, but exports only cluster,
+> city, state, dates, capacity and the activation fields. Without SSEID or a
+> name, that sheet is not actionable for Sales.
+>
+> The full sheet requires `gated`, and `gated` requires an access-controlled
+> URL. Run it locally (`python etl/build.py --mode gated`) until the Cloudflare
+> Access step below is done. **Do not set `PRIVACY_MODE=gated` on a GitHub
+> Pages deployment.**
+
+
 Two stages: GitHub Pages now, Cloudflare Access when the URL needs to stop being
 public. The build is identical for both — only the hosting changes.
 

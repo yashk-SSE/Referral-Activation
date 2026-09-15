@@ -77,7 +77,9 @@ async function loadData() {
 /* filtering                                                               */
 /* ---------------------------------------------------------------------- */
 function applyFilters(f) {
-  const cohort = DS.cols.cohort_month;
+  // Filtered on the installation DATE, not the cohort month: the date presets
+  // ("Last 7 days") cannot be expressed on a month grain.
+  const dates = DS.cols.first_install_date;
   const out = [];
   // Resolve set filters to integer code sets once, not per row.
   const codeSet = (col, chosen) => {
@@ -87,16 +89,17 @@ function applyFilters(f) {
     return s;
   };
   const stateS = codeSet('state', f.state);
-  const cityS = codeSet('city', f.city);
   const branchS = codeSet('branch', f.branch);
-  const mat = DS.cols.maturity_months.v;
 
   for (let i = 0; i < DS.n; i++) {
-    const cm = cohort.levels[cohort.v[i]];
-    if (cm < f.cohortFrom || cm > f.cohortTo) continue;
-    if (f.maturityMin && mat[i] < f.maturityMin) continue;
+    if (dates && (f.from || f.to)) {
+      const code = dates.v[i];
+      if (code === null || code === undefined) continue;
+      const d = dates.levels[code];               // ISO yyyy-mm-dd sorts as text
+      if (f.from && d < f.from) continue;
+      if (f.to && d > f.to) continue;
+    }
     if (stateS && !stateS.has(DS.cols.state.v[i])) continue;
-    if (cityS && !cityS.has(DS.cols.city.v[i])) continue;
     if (branchS && !branchS.has(DS.cols.branch.v[i])) continue;
     out.push(i);
   }
@@ -242,6 +245,28 @@ const AGG = {
       .filter(r => r.before || r.after);
   },
 
+  /** Headline activation numbers, all measured inside the window. */
+  activationSummary(idx) {
+    const act = DS.cols.referrer_activated, suc = DS.cols.successful_activated;
+    const lw = DS.cols.leads_in_window, ow = DS.cols.orders_in_window;
+    let activated = 0, successful = 0, leads = 0, orders = 0;
+    if (act) {
+      for (const i of idx) {
+        if (act.v[i]) activated++;
+        if (suc && suc.v[i]) successful++;
+        leads += (lw && lw.v[i]) || 0;
+        orders += (ow && ow.v[i]) || 0;
+      }
+    }
+    return {
+      activated, successful, leads, orders,
+      rate: pct(activated, idx.length),
+      successRate: pct(successful, idx.length),
+      leadsPer: activated ? +(leads / activated).toFixed(2) : 0,
+      ordersPer: activated ? +(orders / activated).toFixed(2) : 0
+    };
+  },
+
   /** The Sales tracking table: one row per city, plus an India total.
    *
    * Activation is measured inside the configured window, not lifetime, so this
@@ -282,6 +307,7 @@ const AGG = {
     }
     const finish = t => ({
       ...t,
+      not_referred: t.installed - t.referrer_activated,
       activation_rate: pct(t.referrer_activated, t.installed),
       success_rate: pct(t.successful_activated, t.installed),
       leads_per_referrer: t.referrer_activated

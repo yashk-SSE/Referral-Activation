@@ -74,6 +74,21 @@ jobs:
               sys.exit("Refusing to deploy an empty dataset -- check the SQL and the lookback window.")
           if meta['source'] == 'sample':
               sys.exit("Refusing to deploy synthetic data to a live dashboard.")
+          # GitHub Pages is world-readable even from a private repo, so gated
+          # data (customer names, SC and Installation Champion emails) must
+          # never be published through this workflow.
+          if meta['mode'] != 'public':
+              sys.exit(f"Refusing to publish mode={meta['mode']} to GitHub Pages. "
+                       "Only 'public' may be deployed here; gated builds need an "
+                       "access-controlled host (see docs/DEPLOY.md).")
+          identifying = {'install_id', 'customer_name', 'sc_name', 'sc_email',
+                         'installation_champion', 'installation_champion_email'}
+          with open('web/data/customers.json') as fh:
+              shipped = set(json.load(fh)['columns'])
+          leaked = identifying & shipped
+          if leaked:
+              sys.exit(f"Refusing to deploy: identifying columns present in a public "
+                       f"build: {sorted(leaked)}")
           if meta['unmapped_source_count']:
               print(f"::warning::{meta['unmapped_source_count']} unmapped activation_source "
                     f"value(s) fell into Others -- update etl/source_map.json")

@@ -2,11 +2,11 @@
 'use strict';
 
 const F = {
-  cohortFrom: null, cohortTo: null,
-  state: new Set(), city: new Set(), branch: new Set(),
-  maturityMin: 0
+  from: null, to: null,          // ISO dates on the installation date
+  state: new Set(), branch: new Set()
 };
-let activeTab = 'overview';
+let activeTab = 'sales';
+let drilldownOn = true;
 
 /* ---------------------------------------------------------------------- */
 /* Searchable multi-select. A chip row cannot carry 131 cities, and a native
@@ -111,49 +111,82 @@ document.addEventListener('click', () => {
 });
 
 /* ---------------------------------------------------------------------- */
+/* Installation-date range. Day level, not month: "Last 7 days" cannot be
+ * expressed on a month grain. */
+function isoDay(d) { return d.toISOString().slice(0, 10); }
+
+function presetRange(key, maxDay) {
+  const end = new Date(maxDay + 'T00:00:00Z');
+  const y = end.getUTCFullYear(), m = end.getUTCMonth();
+  const startOfMonth = k => isoDay(new Date(Date.UTC(y, m - k, 1)));
+  const endOfMonth = k => isoDay(new Date(Date.UTC(y, m - k + 1, 0)));
+  switch (key) {
+    case '7d': {
+      const s = new Date(end); s.setUTCDate(s.getUTCDate() - 6);
+      return [isoDay(s), maxDay];
+    }
+    case 'tm': return [startOfMonth(0), maxDay];
+    case 'pm': return [startOfMonth(1), endOfMonth(1)];
+    // "Last N months" means the last N COMPLETE months -- the current month is
+    // still accumulating installations and would drag every rate down.
+    case '3m': return [startOfMonth(3), endOfMonth(1)];
+    case '6m': return [startOfMonth(6), endOfMonth(1)];
+    default: return [null, null];
+  }
+}
+
 function buildFilters() {
-  const cohorts = DS.levels('cohort_month').slice().sort();
-  const from = document.getElementById('fCohortFrom');
-  const to = document.getElementById('fCohortTo');
-  cohorts.forEach(c => { from.add(new Option(c, c)); to.add(new Option(c, c)); });
-  F.cohortFrom = cohorts[0];
-  F.cohortTo = cohorts[cohorts.length - 1];
-  from.value = F.cohortFrom;
-  to.value = F.cohortTo;
-  from.addEventListener('change', () => { F.cohortFrom = from.value; render(); });
-  to.addEventListener('change', () => { F.cohortTo = to.value; render(); });
+  const dates = DS.cols.first_install_date;
+  const days = dates ? dates.levels.slice().sort() : [];
+  const minDay = days[0] || null;
+  const maxDay = DS.meta.as_of || days[days.length - 1] || null;
+
+  const fromEl = document.getElementById('fFrom');
+  const toEl = document.getElementById('fTo');
+  if (minDay) { fromEl.min = minDay; toEl.min = minDay; }
+  if (maxDay) { fromEl.max = maxDay; toEl.max = maxDay; }
+
+  const setRange = (a, b, presetKey) => {
+    F.from = a; F.to = b;
+    fromEl.value = a || '';
+    toEl.value = b || '';
+    document.querySelectorAll('#datePresets button').forEach(btn =>
+      btn.classList.toggle('on', btn.dataset.preset === presetKey));
+    render();
+  };
+
+  document.querySelectorAll('#datePresets button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const [a, b] = btn.dataset.preset === 'all'
+        ? [minDay, maxDay]
+        : presetRange(btn.dataset.preset, maxDay);
+      setRange(a, b, btn.dataset.preset);
+    });
+  });
+  // Typing a date clears the preset highlight -- it is now a custom range.
+  [fromEl, toEl].forEach(el => el.addEventListener('change', () => {
+    F.from = fromEl.value || null;
+    F.to = toEl.value || null;
+    document.querySelectorAll('#datePresets button').forEach(b => b.classList.remove('on'));
+    render();
+  }));
 
   buildMultiSelect('fState', 'state', F.state, 'States');
-  buildMultiSelect('fCity', 'city', F.city, 'Cities');
   buildMultiSelect('fBranch', 'branch', F.branch, 'Clusters');
 
-  document.getElementById('fMaturity').addEventListener('change', e => {
-    F.maturityMin = +e.target.value;
-    render();
-  });
-
-  // The Sales view is run on the last three COMPLETE months -- the current
-  // month is still accumulating installations and would drag every rate down.
-  document.getElementById('last3').addEventListener('click', () => {
-    const complete = cohorts.filter(c => c < (DS.meta.as_of || '').slice(0, 7));
-    const pick = complete.slice(-3);
-    if (!pick.length) return;
-    F.cohortFrom = pick[0];
-    F.cohortTo = pick[pick.length - 1];
-    from.value = F.cohortFrom;
-    to.value = F.cohortTo;
+  const toggle = document.getElementById('drillToggle');
+  toggle.addEventListener('click', () => {
+    drilldownOn = !drilldownOn;
+    toggle.setAttribute('aria-checked', String(drilldownOn));
+    toggle.querySelector('.t-label').textContent = drilldownOn ? 'On' : 'Off';
     render();
   });
 
   document.getElementById('resetFilters').addEventListener('click', () => {
-    F.cohortFrom = cohorts[0];
-    F.cohortTo = cohorts[cohorts.length - 1];
-    F.maturityMin = 0;
-    from.value = F.cohortFrom;
-    to.value = F.cohortTo;
-    document.getElementById('fMaturity').value = '0';
+    F.state.clear(); F.branch.clear();
     document.querySelectorAll('.ms').forEach(el => { if (el._reset) el._reset(); });
-    render();
+    const [a, b] = presetRange('3m', maxDay);
+    setRange(a, b, '3m');
   });
 
   document.querySelectorAll('.tab').forEach(tab => {
@@ -167,25 +200,30 @@ function buildFilters() {
       render();
     });
   });
+
+  // Default view: the last three complete months.
+  const [a, b] = presetRange('3m', maxDay);
+  setRange(a, b, '3m');
 }
 
 /* ---------------------------------------------------------------------- */
-function kpi(label, value, note) {
-  return '<div class="kpi"><div class="k-label">' + label + '</div>' +
+function kpi(label, value, note, cls) {
+  return '<div class="kpi ' + (cls || '') + '"><div class="k-label">' + label + '</div>' +
          '<div class="k-value">' + value + '</div>' +
          '<div class="k-note">' + (note || '&nbsp;') + '</div></div>';
 }
 
-function renderKPIs(s, split) {
+function renderKPIs(s, a) {
   document.getElementById('kpis').innerHTML = [
-    kpi('Installed', fmtInt(s.customers), 'customers in range'),
-    kpi('Referrers', fmtInt(s.referrers), fmtPct(s.rate) + ' of the base'),
-    kpi('Successful referrers', fmtInt(s.successful), fmtPct(s.successRate) + ' of the base'),
-    kpi('Never referred', fmtInt(s.customers - s.referrers), fmtPct(100 - s.rate) + ' of the base'),
-    kpi('Referrals given', fmtInt(s.referrals), s.perReferrer + ' per referrer'),
-    kpi('Became orders', fmtInt(s.converted), fmtPct(s.convRate) + ' of referrals'),
-    kpi('Referred before install', fmtPct(split.prePct),
-        fmtInt(split.pre) + ' of ' + fmtInt(split.total) + ' referrers')
+    kpi('Installed base', fmtInt(s.customers), 'customers in range'),
+    kpi('Referrer activation', fmtInt(a.activated), fmtPct(a.rate) + ' of the base', 'k-good'),
+    kpi('Orders activation', fmtInt(a.successful), fmtPct(a.successRate) + ' of the base', 'k-good'),
+    kpi('Not referred', fmtInt(s.customers - a.activated),
+        fmtPct(100 - a.rate) + ' of the base', 'k-warn'),
+    kpi('# Leads', fmtInt(a.leads), a.leadsPer + ' per activated referrer'),
+    kpi('# Orders', fmtInt(a.orders), a.ordersPer + ' per activated referrer'),
+    kpi('Lifetime referrers', fmtInt(s.referrers),
+        fmtPct(s.rate) + ' ignoring the window', 'k-flat')
   ].join('');
 }
 
@@ -272,14 +310,15 @@ const PANELS = {
       numCol('installed', 'Installed base'),
       numCol('cx_recommended', 'Cx Recommended'),
       numCol('idv', 'IDV visits'),
-      numCol('referrer_activated', 'Referrer activated'),
+      numCol('referrer_activated', 'Referrer activation', 'referrer_activated'),
       pctCol('activation_rate', 'Act %'),
-      numCol('successful_activated', 'Successful activated'),
+      numCol('successful_activated', 'Orders activation', 'successful_activated'),
+      numCol('not_referred', 'Not referred', 'not_referred'),
       numCol('leads', '# Leads'),
       numCol('orders', '# Orders'),
       { key: 'leads_per_referrer', label: 'Leads / referrer', num: true, fmt: v => v.toFixed(2) },
       { key: 'orders_per_referrer', label: 'Orders / referrer', num: true, fmt: v => v.toFixed(2) }
-    ], rows, { sortKey: 'installed', drilldown: true });
+    ], rows, { sortKey: 'installed', drilldown: drilldownOn, totalRow: 'India (all)' });
 
     const missing = missingIdentityColumns();
     const india = rows[0];
@@ -287,7 +326,8 @@ const PANELS = {
       ? '<strong>' + fmtInt(india.referrer_activated) + '</strong> of ' +
         fmtInt(india.installed) + ' installed customers activated in-window (' +
         fmtPct(india.activation_rate) + '), producing ' + fmtInt(india.leads) +
-        ' leads and ' + fmtInt(india.orders) + ' orders.' +
+        ' leads and ' + fmtInt(india.orders) + ' orders. <strong>' +
+        fmtInt(india.not_referred) + '</strong> have not referred.' +
         (missing.length
           ? ' <em>Downloads exclude customer and staff identity &mdash; this build is in ' +
             'public mode. Rebuild with <code>--mode gated</code> for the full sheet.</em>'
@@ -385,13 +425,13 @@ function setEmptyState(panel, empty) {
 function render() {
   const idx = applyFilters(F);
   const s = AGG.summary(idx);
-  renderKPIs(s, AGG.preInstallSplit(idx));
+  renderKPIs(s, AGG.activationSummary(idx));
   const panel = document.querySelector('.panel[data-panel="' + activeTab + '"]');
   setEmptyState(panel, idx.length === 0);
   if (idx.length) PANELS[activeTab](idx, s);
   document.getElementById('footMeta').textContent =
-    fmtInt(idx.length) + ' of ' + fmtInt(DS.n) + ' customers in view · refreshed ' +
-    (DS.meta.generated_at || '').replace('T', ' ');
+    fmtInt(idx.length) + ' of ' + fmtInt(DS.n) + ' installed customers in view' +
+    (F.from ? ' · installed ' + F.from + ' to ' + F.to : '');
   requestAnimationFrame(resizeAll);
 }
 
@@ -401,8 +441,15 @@ loadData().then(() => {
   const sample = DS.meta.source === 'sample';
   badge.textContent = sample ? 'Sample data' : (DS.meta.mode === 'gated' ? 'Row-level' : 'Aggregate');
   badge.classList.toggle('sample', sample);
-  document.getElementById('asOf').textContent =
-    (DS.meta.lookback_months || '?') + ' months to ' + (DS.meta.as_of || '—');
+  // Show when the data was actually pulled, with the time -- a date alone does
+  // not tell anyone whether this morning's refresh has landed.
+  const gen = DS.meta.generated_at || '';
+  const stamp = gen
+    ? new Date(gen).toLocaleString('en-IN',
+        { day: '2-digit', month: 'short', year: 'numeric',
+          hour: '2-digit', minute: '2-digit', hour12: true })
+    : '—';
+  document.getElementById('refreshedAt').textContent = stamp;
 
   document.getElementById('footWarn').textContent =
     DS.meta.source === 'sample' ? 'Synthetic data — not real numbers.' : '';
