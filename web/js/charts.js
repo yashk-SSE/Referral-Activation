@@ -62,11 +62,6 @@ const fmtPct = n => (n === null || n === undefined) ? '—' : `${(+n).toFixed(1)
 /* ---------------------------------------------------------------------- */
 /* overview                                                                */
 /* ---------------------------------------------------------------------- */
-
-
-/* ---------------------------------------------------------------------- */
-/* overview                                                                */
-/* ---------------------------------------------------------------------- */
 function chartCohort(rows) {
   mount('chCohort', Object.assign(BASE(), {
     grid: { left: 40, right: 46, top: 30, bottom: 46, containLabel: true },
@@ -145,27 +140,53 @@ function chartSourceShare(mix) {
 }
 
 /* ---------------------------------------------------------------------- */
-/* geography                                                               */
-/* ---------------------------------------------------------------------- */
-
-
-/* ---------------------------------------------------------------------- */
 /* timing                                                                  */
 /* ---------------------------------------------------------------------- */
-function chartTiming(rows) {
-  mount('chTiming', Object.assign(BASE(), {
+function chartTimingBuckets(rows) {
+  // Short axis labels; the full bucket name is in the tooltip.
+  const SHORT = ['Before install', 'Install +0-3d', 'Install +4-7d',
+                 'Install +8d to comm.', 'After comm.'];
+mount('chTiming', Object.assign(BASE(), {
+    grid: { left: 44, right: 16, top: 20, bottom: 46, containLabel: true },
     legend: { show: false },
     tooltip: {
       trigger: 'axis', backgroundColor: C.tooltipBg, borderColor: C.tooltipBorder, borderWidth: 1,
       textStyle: { color: C.textStrong, fontSize: 12 },
-      formatter: p => `<b>${rows[p[0].dataIndex].label}</b><br/>${fmtInt(p[0].value)} first referrals`
+      formatter: p => {
+        const r = rows[p[0].dataIndex];
+        return `<b>${r.bucket}</b><br/>${fmtInt(r.customers)} referrers` +
+               `<br/><span style="color:${C.text}">${fmtPct(r.pct)} of all referrers</span>`;
+      }
     },
-    xAxis: AXIS_X({ data: rows.map(r => r.label), axisLabel: { color: C.text, fontSize: 9, rotate: 50 } }),
+    xAxis: AXIS_X({ data: rows.map((r, i) => SHORT[i] || r.bucket),
+                    axisLabel: { color: C.text, fontSize: 10, lineHeight: 13 } }),
     yAxis: AXIS_Y(),
     series: [{
-      type: 'bar', data: rows.map(r => r.count), barMaxWidth: 22,
-      itemStyle: { color: p => rows[p.dataIndex].pre ? '#e0862c' : C.accent, borderRadius: [3, 3, 0, 0] }
+      type: 'bar', data: rows.map(r => r.customers), barMaxWidth: 60,
+      itemStyle: { color: p => TIMING_COLOR[rows[p.dataIndex].bucket] || C.accent,
+                   borderRadius: [4, 4, 0, 0] },
+      label: { show: true, position: 'top', color: C.text, fontSize: 11,
+               formatter: p => fmtPct(rows[p.dataIndex].pct) }
     }]
+  }));
+}
+
+/* Where a customer's first referral came from on each side of installation.
+ * A customer who referred both before and after appears in both series. */
+function chartBeforeAfter(rows) {
+  mount('chBeforeAfter', Object.assign(BASE(), {
+    grid: { left: 60, right: 20, top: 30, bottom: 34, containLabel: true },
+    legend: { top: 0, data: ['Before installation', 'After installation'] },
+    tooltip: { trigger: 'axis', backgroundColor: C.tooltipBg, borderColor: C.tooltipBorder,
+               borderWidth: 1, textStyle: { color: C.textStrong, fontSize: 12 } },
+    xAxis: AXIS_Y(),
+    yAxis: AXIS_X({ data: rows.map(r => r.sub_channel), axisLabel: { color: C.text, fontSize: 11 } }),
+    series: [
+      { name: 'Before installation', type: 'bar', data: rows.map(r => r.before),
+        barMaxWidth: 13, itemStyle: { color: '#e0862c', borderRadius: [0, 3, 3, 0] } },
+      { name: 'After installation', type: 'bar', data: rows.map(r => r.after),
+        barMaxWidth: 13, itemStyle: { color: '#17a2a2', borderRadius: [0, 3, 3, 0] } }
+    ]
   }));
 }
 

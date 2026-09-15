@@ -30,13 +30,16 @@ SQL_DIR = os.path.join(ROOT, "sql")
 
 # Columns shipped to the browser at row level, by privacy tier.
 PUBLIC_COLUMNS = [
-    "cohort_month", "state", "branch", "acquisition_channel", "capacity_band",
-    "install_count", "capacity_kw", "order_value", "is_referrer", "activated_by",
+    "cohort_month", "state", "branch", "capacity_band",
+    "install_count", "capacity_kw", "order_value",
+    "is_referrer", "is_successful_referrer", "activated_by",
+    "sub_channel_pre", "sub_channel_post",
+    "first_timing_bucket", "first_tat_from_hoto",
     "referrals_total", "referrals_converted", "months_to_first_referral",
-    "days_to_first_referral", "pre_install_referrer", "was_referred_in",
-    "maturity_months",
+    "days_to_first_referral", "pre_install_referrer", "maturity_months",
 ]
-GATED_EXTRA = ["customer_id", "city", "first_install_date", "first_referral_date"]
+GATED_EXTRA = ["customer_id", "city", "first_install_date", "first_referral_date",
+               "hoto_date", "commissioning_date"]
 
 
 # ---------------------------------------------------------------------------
@@ -159,8 +162,8 @@ def main() -> int:
             return 1
 
     as_of = date.today()
-    source_map = T.load_source_map(os.path.join(HERE, "source_map.json"))
-    base, ref_detail, unmapped = T.build_customer_base(installs, referrals, source_map, as_of)
+    sub_map = T.load_sub_channel_map(os.path.join(HERE, "sub_channel_map.json"))
+    base, ref_detail, unmapped = T.build_customer_base(installs, referrals, sub_map, as_of)
 
     summary = T.summarise(base, unmapped)
     print(
@@ -168,24 +171,25 @@ def main() -> int:
         f"{summary['referrers']:,} referrers ({summary['activation_rate']}%)"
     )
     if unmapped:
-        print(f"\n  !! {len(unmapped)} unmapped activation_source value(s) fell into Others:")
+        print(f"\n  !! {len(unmapped)} referral value(s) fell into the Others Sub-Channel:")
         for value, count in unmapped.most_common(10):
             print(f"       {value!r}  x{count}")
-        print("     Add these to etl/source_map.json.")
+        print("     Map them in etl/sub_channel_map.json if they should not be Others.")
 
     columns = PUBLIC_COLUMNS + (GATED_EXTRA if args.mode == "gated" else [])
     columns = [c for c in columns if c in base.columns]
     shipped = base[columns].copy()
-    for col in ("first_install_date", "first_referral_date"):
+    for col in ("first_install_date", "first_referral_date",
+                "hoto_date", "commissioning_date"):
         if col in shipped.columns:
-            shipped[col] = shipped[col].dt.strftime("%Y-%m-%d")
+            shipped[col] = pd.to_datetime(shipped[col], errors="coerce").dt.strftime("%Y-%m-%d")
 
     print(f"\nWriting datasets (mode={args.mode}):")
     write_json(os.path.join(DATA_DIR, "customers.json"),
                {"n": int(len(shipped)), "columns": encode_columns(shipped)})
     write_json(os.path.join(DATA_DIR, "aggregates.json"), {
         "summary": summary,
-        "triangle": T.cohort_triangle(base),
+        "timing": T.timing_summary(base, ref_detail),
         "trajectory": T.trajectory(base, ref_detail),
     })
     write_json(os.path.join(DATA_DIR, "meta.json"), {
@@ -194,7 +198,8 @@ def main() -> int:
         "mode": args.mode,
         "lookback_months": args.months,
         "source": "sample" if args.sample else "metabase",
-        "canonical_sources": T.CANONICAL_SOURCES,
+        "sub_channels": T.SUB_CHANNELS,
+        "timing_buckets": T.TIMING_BUCKETS,
         "unmapped_source_count": len(unmapped),
     }, gzip_too=False)
 

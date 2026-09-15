@@ -17,31 +17,49 @@ from typing import Any
 
 import pandas as pd
 
-MAX_TRIANGLE_MONTHS = 24
-
-# Populated from source_map.json at load time so the dashboard and the ETL
+# Populated from sub_channel_map.json at load time so the dashboard and the ETL
 # always agree on the bucket list and its order.
-CANONICAL_SOURCES: list[str] = []
+SUB_CHANNELS: list[str] = []
+
+# Referral timing, relative to the customer's own installation. Commissioning
+# always truncates the post-install windows -- see assign_timing_bucket.
+TIMING_BUCKETS = [
+    "Before installation",
+    "Install + 0-3 days",
+    "Install + 4-7 days",
+    "Install + 8 days to commissioning",
+    "After commissioning",
+]
 
 
 # ---------------------------------------------------------------------------
-# activation source
+# sub-channel
 # ---------------------------------------------------------------------------
-def load_source_map(path: str) -> dict[str, Any]:
-    """Load the two-stage activation mapping (employee role, then programme)."""
-    global CANONICAL_SOURCES
+def _norm(value: Any) -> str:
+    """Lowercase and strip ALL whitespace.
+
+    Ops appears as 'Ops(Projects/liaising/O&M/Others)',
+    'Ops(project/liasing/O&M/others)' and 'Ops ( project/ liaising /O&M
+    /others )'. Removing whitespace collapses the spaced variant onto the
+    others; the remaining spelling differences are listed explicitly.
+    """
+    return "".join(str(value).split()).lower()
+
+
+def load_sub_channel_map(path: str) -> dict[str, Any]:
+    global SUB_CHANNELS
     with open(path, "r", encoding="utf-8") as fh:
         cfg = json.load(fh)
-
-    def flatten(section: str) -> dict[str, str]:
-        out: dict[str, str] = {}
-        for canonical, raw_values in cfg.get(section, {}).items():
-            for raw in raw_values:
-                out[str(raw).strip().lower()] = canonical
-        return out
-
-    CANONICAL_SOURCES = list(cfg["display_order"])
-    return {"role": flatten("role_map"), "source": flatten("source_map")}
+    role_map: dict[str, str] = {}
+    for bucket, raw_values in cfg.get("role_map", {}).items():
+        for raw in raw_values:
+            role_map[_norm(raw)] = bucket
+    SUB_CHANNELS = list(cfg["display_order"])
+    return {
+        "role": role_map,
+        "customer_role": _norm(cfg.get("customer_role", "Customer")),
+        "capp_campaign": _norm(cfg.get("capp_campaign", "customer_app")),
+    }
 
 
 def _blank(value: Any) -> bool:
@@ -52,37 +70,69 @@ def _blank(value: Any) -> bool:
     )
 
 
-def derive_activation(
-    roles: pd.Series, sources: pd.Series, mapping: dict[str, Any]
+def derive_sub_channel(
+    roles: pd.Series, campaigns: pd.Series, mapping: dict[str, Any]
 ) -> tuple[pd.Series, Counter]:
-    """Resolve each referral to one activation bucket.
+    """Resolve each referral to one Sub-Channel, driven by referrer_role.
 
-    The employee role wins when present, because it says who actually prompted
-    the referral. When it is blank no employee was involved, so the programme
-    route (source) is what distinguishes a self-serve customer referral from a
-    partner or employee one.
+        Sales    role in Solar Consultant / LRM / Pre sales Team / SC - Referral Calling
+        BTL      role = BTL
+        Ops/AMC  role in CDM / NPS Sweep Team / Ops(...)
+        CApp     role = Customer AND utm_campaign  = customer_app
+        Online   role = Customer AND utm_campaign != customer_app
+        Others   everything else, including a blank role
+
+    `unmapped` records what landed in Others so the size and shape of that
+    bucket is visible rather than assumed.
     """
     unmapped: Counter = Counter()
-    role_map, source_map = mapping["role"], mapping["source"]
+    role_map = mapping["role"]
+    customer_role = mapping["customer_role"]
+    capp_campaign = mapping["capp_campaign"]
 
-    def _one(role: Any, source: Any) -> str:
-        if not _blank(role):
-            key = str(role).strip().lower()
-            if key in role_map:
-                return role_map[key]
-            unmapped[f"role: {str(role).strip()}"] += 1
+    def _one(role: Any, campaign: Any) -> str:
+        if _blank(role):
+            unmapped["(no referrer_role)"] += 1
             return "Others"
-        if not _blank(source):
-            key = str(source).strip().lower()
-            if key in source_map:
-                return source_map[key]
-            unmapped[f"source: {str(source).strip()}"] += 1
-            return "Others"
-        unmapped["(no role, no source)"] += 1
+        key = _norm(role)
+        if key in role_map:
+            return role_map[key]
+        if key == customer_role:
+            return "CApp" if _norm(campaign) == capp_campaign else "Online"
+        unmapped[f"role: {str(role).strip()}"] += 1
         return "Others"
 
-    values = [_one(r, s) for r, s in zip(roles, sources)]
+    values = [_one(r, c) for r, c in zip(roles, campaigns)]
     return pd.Series(values, index=roles.index), unmapped
+
+
+# ---------------------------------------------------------------------------
+# referral timing
+# ---------------------------------------------------------------------------
+def assign_timing_bucket(
+    ref_date: Any, install_date: Any, commissioning_date: Any
+) -> str | None:
+    """Which window a referral falls in, relative to the customer's install.
+
+    Commissioning takes precedence over the day-count windows: once a system is
+    commissioned the customer is a live user, not someone mid-installation, so
+    a referral on day 5 of a system commissioned on day 4 is "After
+    commissioning" rather than "Install + 4-7 days". That is the
+    "if commissioning happens in between, take commissioning first" rule.
+    """
+    if pd.isna(ref_date) or pd.isna(install_date):
+        return None
+    if ref_date < install_date:
+        return "Before installation"
+    commissioned = not pd.isna(commissioning_date)
+    if commissioned and ref_date >= commissioning_date:
+        return "After commissioning"
+    days = (ref_date - install_date).days
+    if days <= 3:
+        return "Install + 0-3 days"
+    if days <= 7:
+        return "Install + 4-7 days"
+    return "Install + 8 days to commissioning"
 
 
 # ---------------------------------------------------------------------------
@@ -101,75 +151,111 @@ def _month_diff(later: pd.Series, earlier: pd.Series) -> pd.Series:
 def build_customer_base(
     installs: pd.DataFrame,
     referrals: pd.DataFrame,
-    source_map: dict[str, str],
+    mapping: dict[str, Any],
     as_of: date,
 ) -> tuple[pd.DataFrame, pd.DataFrame, Counter]:
     installs = installs.copy()
     referrals = referrals.copy()
 
-    installs["install_date"] = _to_date(installs["install_date"])
+    for col in ("install_date", "hoto_date", "commissioning_date"):
+        installs[col] = _to_date(installs[col]) if col in installs.columns else pd.NaT
     installs = installs.dropna(subset=["install_date", "customer_id"])
     installs["customer_id"] = installs["customer_id"].astype(str)
     for col in ("capacity_kw", "order_value"):
-        if col in installs.columns:
-            installs[col] = pd.to_numeric(installs[col], errors="coerce")
-        else:
-            installs[col] = 0.0
+        installs[col] = pd.to_numeric(installs.get(col), errors="coerce")
 
     referrals["referral_date"] = _to_date(referrals["referral_date"])
     referrals = referrals.dropna(subset=["referral_date", "referrer_customer_id"])
     referrals["referrer_customer_id"] = referrals["referrer_customer_id"].astype(str)
-    for col in ("referrer_role", "referral_source"):
+    for col in ("referrer_role", "utm_campaign"):
         if col not in referrals.columns:
             referrals[col] = None
-    referrals["activation_source"], unmapped = derive_activation(
-        referrals["referrer_role"], referrals["referral_source"], source_map
+    referrals["sub_channel"], unmapped = derive_sub_channel(
+        referrals["referrer_role"], referrals["utm_campaign"], mapping
+    )
+    if "converted_date" in referrals.columns:
+        referrals["converted_date"] = _to_date(referrals["converted_date"])
+    else:
+        referrals["converted_date"] = pd.NaT
+    referrals["is_converted"] = (
+        referrals["converted_install_id"].notna()
+        if "converted_install_id" in referrals.columns
+        else False
     )
 
-    # --- customer base, cohorted on first install --------------------------
+    # --- customer base, cohorted on FIRST installation ---------------------
     installs = installs.sort_values("install_date")
     first = installs.groupby("customer_id", as_index=False).first()
     rollup = installs.groupby("customer_id", as_index=False).agg(
         first_install_date=("install_date", "min"),
-        last_install_date=("install_date", "max"),
         install_count=("install_id", "nunique"),
         capacity_kw=("capacity_kw", "sum"),
         order_value=("order_value", "sum"),
     )
-    attrs = [
-        c
-        for c in ("state", "city", "branch", "acquisition_channel", "referred_by_customer_id")
-        if c in first.columns
-    ]
+    attrs = [c for c in ("state", "city", "branch", "hoto_date", "commissioning_date")
+             if c in first.columns]
     base = rollup.merge(first[["customer_id", *attrs]], on="customer_id", how="left")
 
-    # --- referral rollup ---------------------------------------------------
+    # --- referral timing, which needs the customer's own milestone dates ----
     referrals = referrals.sort_values("referral_date")
     referrals["referral_rank"] = referrals.groupby("referrer_customer_id").cumcount() + 1
-    if "converted_install_id" in referrals.columns:
-        referrals["is_converted"] = referrals["converted_install_id"].notna()
-    else:
-        referrals["is_converted"] = False
+    ref = referrals.merge(
+        base[["customer_id", "first_install_date", "hoto_date", "commissioning_date"]],
+        left_on="referrer_customer_id", right_on="customer_id", how="inner",
+    )
+    ref["timing_bucket"] = [
+        assign_timing_bucket(r, i, c)
+        for r, i, c in zip(ref["referral_date"], ref["first_install_date"],
+                           ref["commissioning_date"])
+    ]
+    ref["is_pre_install"] = ref["referral_date"] < ref["first_install_date"]
+    ref["days_from_install"] = (ref["referral_date"] - ref["first_install_date"]).dt.days
+    # TAT for pre-installation referrals is measured from HOTO, not from install.
+    ref["days_from_hoto"] = (ref["referral_date"] - ref["hoto_date"]).dt.days
+    ref.loc[~ref["is_pre_install"], "days_from_hoto"] = pd.NA
 
-    ref_roll = referrals.groupby("referrer_customer_id", as_index=False).agg(
+    # --- roll referrals back up to the customer ----------------------------
+    agg = ref.groupby("referrer_customer_id", as_index=False).agg(
         first_referral_date=("referral_date", "min"),
         last_referral_date=("referral_date", "max"),
         referrals_total=("referral_id", "nunique"),
         referrals_converted=("is_converted", "sum"),
     )
-    firsts = referrals[referrals["referral_rank"] == 1][
-        ["referrer_customer_id", "activation_source"]
-    ].rename(columns={"activation_source": "activated_by"})
-    ref_roll = ref_roll.merge(firsts, on="referrer_customer_id", how="left")
 
-    base = base.merge(
-        ref_roll, left_on="customer_id", right_on="referrer_customer_id", how="left"
-    ).drop(columns=["referrer_customer_id"], errors="ignore")
+    def _first_sub_channel(frame: pd.DataFrame, label: str) -> pd.DataFrame:
+        """Sub-Channel of the earliest referral in `frame`, per customer."""
+        if frame.empty:
+            return pd.DataFrame(columns=["referrer_customer_id", label])
+        firsts = frame.sort_values("referral_date").groupby(
+            "referrer_customer_id", as_index=False).first()
+        return firsts[["referrer_customer_id", "sub_channel"]].rename(
+            columns={"sub_channel": label})
 
-    # --- derived fields ----------------------------------------------------
+    agg = agg.merge(_first_sub_channel(ref, "activated_by"),
+                    on="referrer_customer_id", how="left")
+    agg = agg.merge(_first_sub_channel(ref[ref["is_pre_install"]], "sub_channel_pre"),
+                    on="referrer_customer_id", how="left")
+    agg = agg.merge(_first_sub_channel(ref[~ref["is_pre_install"]], "sub_channel_post"),
+                    on="referrer_customer_id", how="left")
+
+    # timing bucket of the FIRST referral -- what actually activated them
+    first_ref = ref.sort_values("referral_date").groupby(
+        "referrer_customer_id", as_index=False).first()
+    agg = agg.merge(
+        first_ref[["referrer_customer_id", "timing_bucket", "days_from_hoto"]].rename(
+            columns={"timing_bucket": "first_timing_bucket",
+                     "days_from_hoto": "first_tat_from_hoto"}),
+        on="referrer_customer_id", how="left")
+
+    base = base.merge(agg, left_on="customer_id", right_on="referrer_customer_id",
+                      how="left").drop(columns=["referrer_customer_id"], errors="ignore")
+
+    # --- derived flags -----------------------------------------------------
     base["referrals_total"] = base["referrals_total"].fillna(0).astype(int)
     base["referrals_converted"] = base["referrals_converted"].fillna(0).astype(int)
     base["is_referrer"] = base["referrals_total"] > 0
+    # "Successful referrer" = at least one referral that became an order.
+    base["is_successful_referrer"] = base["referrals_converted"] > 0
     base["activated_by"] = base["activated_by"].where(base["is_referrer"], None)
 
     base["cohort_month"] = base["first_install_date"].dt.strftime("%Y-%m")
@@ -180,16 +266,12 @@ def build_customer_base(
     ).clip(lower=0)
 
     base["months_to_first_referral"] = _month_diff(
-        base["first_referral_date"], base["first_install_date"]
-    )
+        base["first_referral_date"], base["first_install_date"])
     base["days_to_first_referral"] = (
-        base["first_referral_date"] - base["first_install_date"]
-    ).dt.days
+        base["first_referral_date"] - base["first_install_date"]).dt.days
     base["pre_install_referrer"] = base["days_to_first_referral"] < 0
-    if "referred_by_customer_id" in base.columns:
-        base["was_referred_in"] = base["referred_by_customer_id"].notna()
-    else:
-        base["was_referred_in"] = False
+    base["first_tat_from_hoto"] = pd.to_numeric(base["first_tat_from_hoto"],
+                                                errors="coerce")
 
     base["capacity_band"] = pd.cut(
         base["capacity_kw"].fillna(0),
@@ -197,22 +279,7 @@ def build_customer_base(
         labels=["<=3 kW", "3-5 kW", "5-10 kW", "10-25 kW", "25-100 kW", "100+ kW"],
     ).astype(str)
 
-    # referral-level frame, enriched with referrer cohort for trajectory views
-    ref_detail = referrals.merge(
-        base[["customer_id", "cohort_month", "first_install_date", "first_referral_date"]],
-        left_on="referrer_customer_id",
-        right_on="customer_id",
-        how="inner",
-    )
-    ref_detail["months_since_first_referral"] = _month_diff(
-        ref_detail["referral_date"], ref_detail["first_referral_date"]
-    )
-    ref_detail["months_since_install"] = _month_diff(
-        ref_detail["referral_date"], ref_detail["first_install_date"]
-    )
-
-    return base, ref_detail, unmapped
-
+    return base, ref, unmapped
 
 # ---------------------------------------------------------------------------
 # aggregates
@@ -264,29 +331,16 @@ def trajectory(base: pd.DataFrame, ref_detail: pd.DataFrame) -> dict:
         for n in range(1, 11)
     ]
 
-    # cumulative referrals per referrer, by months since their first referral
-    curve: list[float | None] = []
-    for m in range(0, 25):
-        eligible = referrers[referrers["maturity_months"] >= m]
-        if eligible.empty or ref_detail.empty:
-            curve.append(None)
-            continue
-        ids = set(eligible["customer_id"])
-        given = ref_detail[
-            ref_detail["referrer_customer_id"].isin(ids)
-            & (ref_detail["months_since_first_referral"] <= m)
-        ]
-        curve.append(round(len(given) / len(eligible), 3))
-
     by_source = []
-    for src in CANONICAL_SOURCES:
+    for src in SUB_CHANNELS:
         grp = referrers[referrers["activated_by"] == src]
         if grp.empty:
             continue
         by_source.append(
             {
-                "source": src,
+                "sub_channel": src,
                 "referrers": int(len(grp)),
+                "successful": int(grp["is_successful_referrer"].sum()),
                 "avg_referrals": round(float(grp["referrals_total"].mean()), 2),
                 "repeat_rate": round(100 * float((grp["referrals_total"] >= 2).mean()), 2),
                 "conversion_rate": round(
@@ -296,7 +350,7 @@ def trajectory(base: pd.DataFrame, ref_detail: pd.DataFrame) -> dict:
             }
         )
 
-    return {"depth": depth, "cumulative_per_referrer": curve, "by_source": by_source}
+    return {"depth": depth, "by_sub_channel": by_source}
 
 
 def summarise(base: pd.DataFrame, unmapped: Counter) -> dict:
@@ -309,9 +363,84 @@ def summarise(base: pd.DataFrame, unmapped: Counter) -> dict:
         "installs": int(base["install_count"].sum()),
         "referrers": int(len(referrers)),
         "activation_rate": round(100 * len(referrers) / len(base), 2) if len(base) else 0.0,
+        # A "successful referrer" gave at least one referral that became an order.
+        "successful_referrers": int(base["is_successful_referrer"].sum()),
+        "success_rate": round(100 * int(base["is_successful_referrer"].sum()) / len(base), 2)
+                        if len(base) else 0.0,
         "referrals": int(base["referrals_total"].sum()),
         "referrals_converted": int(base["referrals_converted"].sum()),
         "pre_install_referrers": int(base["pre_install_referrer"].sum()),
         "median_days_to_first": None if median_days is None or pd.isna(median_days) else median_days,
         "unmapped_sources": dict(unmapped.most_common(25)),
+    }
+
+
+# ---------------------------------------------------------------------------
+# timing / TAT
+# ---------------------------------------------------------------------------
+def timing_summary(base: pd.DataFrame, ref: pd.DataFrame) -> dict:
+    """Referral timing buckets, sub-channel splits, and pre-install TAT.
+
+    Counted two ways because they answer different questions:
+      customers -- where each referrer's FIRST referral landed (what activated
+                   them), so the buckets sum to the referrer count
+      referrals -- where every referral landed, so a customer who referred both
+                   before and after installation appears in both
+    """
+    referrers = base[base["is_referrer"]]
+
+    by_first = (
+        referrers["first_timing_bucket"].value_counts().to_dict()
+        if "first_timing_bucket" in referrers.columns else {}
+    )
+    by_all = ref["timing_bucket"].value_counts().to_dict() if not ref.empty else {}
+    total_first = sum(by_first.values())
+    total_all = sum(by_all.values())
+
+    buckets = [
+        {
+            "bucket": b,
+            "customers": int(by_first.get(b, 0)),
+            "customers_pct": round(100 * by_first.get(b, 0) / total_first, 2) if total_first else 0.0,
+            "referrals": int(by_all.get(b, 0)),
+            "referrals_pct": round(100 * by_all.get(b, 0) / total_all, 2) if total_all else 0.0,
+        }
+        for b in TIMING_BUCKETS
+    ]
+
+    # Pre-installation TAT is measured from HOTO, per spec.
+    pre = ref[ref["is_pre_install"] & ref["days_from_hoto"].notna()]
+    tat = pd.to_numeric(pre["days_from_hoto"], errors="coerce").dropna()
+    tat_by_channel = []
+    for ch in SUB_CHANNELS:
+        vals = pd.to_numeric(
+            pre.loc[pre["sub_channel"] == ch, "days_from_hoto"], errors="coerce"
+        ).dropna()
+        if vals.empty:
+            continue
+        tat_by_channel.append({
+            "sub_channel": ch,
+            "n": int(len(vals)),
+            "p50": round(float(vals.quantile(0.50)), 1),
+            "p90": round(float(vals.quantile(0.90)), 1),
+        })
+
+    return {
+        "buckets": buckets,
+        "pre_install_tat_from_hoto": {
+            "n": int(len(tat)),
+            "p50": round(float(tat.quantile(0.50)), 1) if len(tat) else None,
+            "p90": round(float(tat.quantile(0.90)), 1) if len(tat) else None,
+            "by_sub_channel": tat_by_channel,
+        },
+        # Sub-Channel of a customer's first referral BEFORE vs AFTER installation.
+        # A customer can appear in both columns.
+        "sub_channel_pre": (
+            referrers["sub_channel_pre"].value_counts().to_dict()
+            if "sub_channel_pre" in referrers.columns else {}
+        ),
+        "sub_channel_post": (
+            referrers["sub_channel_post"].value_counts().to_dict()
+            if "sub_channel_post" in referrers.columns else {}
+        ),
     }

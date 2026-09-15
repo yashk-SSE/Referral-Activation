@@ -10,15 +10,25 @@
 /* Populated from meta.json at load time so the bucket list always matches
  * etl/source_map.json -- the buckets are derived from the warehouse's own
  * values, not a fixed guess. */
-let SOURCES = ['Sales', 'Ops/AMC', 'BTL', 'Customer direct', 'Others'];
+let SOURCES = ['Sales', 'Online', 'CApp', 'BTL', 'Ops/AMC', 'Others'];
+let TIMING_BUCKETS = [
+  'Before installation', 'Install + 0-3 days', 'Install + 4-7 days',
+  'Install + 8 days to commissioning', 'After commissioning'
+];
 const SOURCE_COLOR = {
   'Sales': '#3b6fd4',
-  'Ops/AMC': '#d4506b',
+  'Online': '#17a2a2',
+  'CApp': '#8b5cf6',
   'BTL': '#e0862c',
-  'Customer direct': '#17a2a2',
-  'Partner (SPP)': '#8b5cf6',
-  'Employee (SSE)': '#6366f1',
+  'Ops/AMC': '#d4506b',
   'Others': '#94a3b8'
+};
+const TIMING_COLOR = {
+  'Before installation': '#e0862c',
+  'Install + 0-3 days': '#3b6fd4',
+  'Install + 4-7 days': '#5b8ae0',
+  'Install + 8 days to commissioning': '#8aaded',
+  'After commissioning': '#17a2a2'
 };
 const FALLBACK_COLOR = '#94a3b8';
 
@@ -53,9 +63,12 @@ async function loadData() {
   DS.n = customers.n;
   DS.cols = customers.columns;
   DS.meta = meta;
-  if (Array.isArray(meta.canonical_sources) && meta.canonical_sources.length) {
-    SOURCES = meta.canonical_sources;
+  if (Array.isArray(meta.sub_channels) && meta.sub_channels.length) {
+    SOURCES = meta.sub_channels;
     SOURCES.forEach(s => { if (!SOURCE_COLOR[s]) SOURCE_COLOR[s] = FALLBACK_COLOR; });
+  }
+  if (Array.isArray(meta.timing_buckets) && meta.timing_buckets.length) {
+    TIMING_BUCKETS = meta.timing_buckets;
   }
   return DS;
 }
@@ -122,8 +135,9 @@ function groupBy(idx, col) {
 const AGG = {
 
   summary(idx) {
-    let referrers = 0, referrals = 0, converted = 0, installs = 0, pre = 0, value = 0;
+    let referrers = 0, referrals = 0, converted = 0, installs = 0, pre = 0, value = 0, successful = 0;
     const days = [];
+    const suc = DS.cols.is_successful_referrer ? DS.cols.is_successful_referrer.v : null;
     const isRef = DS.cols.is_referrer.v, rt = DS.cols.referrals_total.v,
           rc = DS.cols.referrals_converted.v, ic = DS.cols.install_count.v,
           pi = DS.cols.pre_install_referrer.v, dtf = DS.cols.days_to_first_referral.v,
@@ -133,6 +147,7 @@ const AGG = {
       referrals += rt[i] || 0;
       converted += rc[i] || 0;
       if (ov) value += ov[i] || 0;
+      if (suc && suc[i]) successful++;
       if (isRef[i]) {
         referrers++;
         if (pi[i]) pre++;
@@ -140,12 +155,93 @@ const AGG = {
       }
     }
     return {
-      customers: idx.length, installs, referrers, referrals, converted, pre, value,
+      customers: idx.length, installs, referrers, referrals, converted, pre, value, successful,
       rate: pct(referrers, idx.length),
+      successRate: pct(successful, idx.length),
       convRate: pct(converted, referrals),
       perReferrer: referrers ? +(referrals / referrers).toFixed(2) : 0,
       medianDays: median(days)
     };
+  },
+
+  /** Where each referrer's FIRST referral landed, relative to their install.
+   *
+   * Commissioning truncates the post-install windows: once commissioned the
+   * customer is a live user, not someone mid-installation. Assigned in the ETL
+   * so the rule lives in one place.
+   */
+  timingBuckets(idx) {
+    const col = DS.cols.first_timing_bucket;
+    if (!col) return [];
+    const counts = new Map(TIMING_BUCKETS.map(b => [b, 0]));
+    let total = 0;
+    for (const i of idx) {
+      const v = col.v[i];
+      if (v === null || v === undefined) continue;
+      const name = col.levels[v];
+      if (!counts.has(name)) counts.set(name, 0);
+      counts.set(name, counts.get(name) + 1);
+      total++;
+    }
+    return TIMING_BUCKETS.map(b => ({
+      bucket: b, customers: counts.get(b) || 0, pct: pct(counts.get(b) || 0, total)
+    }));
+  },
+
+  /** p50 / p90 days from HOTO to first referral, for pre-installation referrers.
+   *
+   * Measured from HOTO rather than from installation because that is when the
+   * customer relationship starts -- the question is how quickly after handover
+   * the referral is captured.
+   */
+  preInstallTAT(idx) {
+    const tatCol = DS.cols.first_tat_from_hoto, sc = DS.cols.activated_by;
+    if (!tatCol) return { overall: null, bySubChannel: [] };
+    const all = [], byCh = new Map();
+    for (const i of idx) {
+      const v = tatCol.v[i];
+      if (v === null || v === undefined) continue;
+      all.push(v);
+      const name = sc && sc.v[i] !== null && sc.v[i] !== undefined ? sc.levels[sc.v[i]] : 'Others';
+      if (!byCh.has(name)) byCh.set(name, []);
+      byCh.get(name).push(v);
+    }
+    const q = (arr, p) => {
+      if (!arr.length) return null;
+      const s = arr.slice().sort((a, b) => a - b);
+      return s[Math.min(s.length - 1, Math.floor(p * (s.length - 1)))];
+    };
+    return {
+      overall: all.length ? { n: all.length, p50: q(all, 0.5), p90: q(all, 0.9) } : null,
+      bySubChannel: SOURCES
+        .filter(s => byCh.has(s))
+        .map(s => ({ sub_channel: s, n: byCh.get(s).length,
+                     p50: q(byCh.get(s), 0.5), p90: q(byCh.get(s), 0.9) }))
+    };
+  },
+
+  /** Sub-Channel of a customer's first referral BEFORE vs AFTER installation.
+   *
+   * A customer who referred on both sides of their installation is counted in
+   * both columns, so these do not sum to the referrer count.
+   */
+  subChannelBeforeAfter(idx) {
+    const pre = DS.cols.sub_channel_pre, post = DS.cols.sub_channel_post;
+    const tally = (col) => {
+      const m = new Map();
+      if (!col) return m;
+      for (const i of idx) {
+        const v = col.v[i];
+        if (v === null || v === undefined) continue;
+        const name = col.levels[v];
+        m.set(name, (m.get(name) || 0) + 1);
+      }
+      return m;
+    };
+    const b = tally(pre), a = tally(post);
+    return SOURCES
+      .map(s => ({ sub_channel: s, before: b.get(s) || 0, after: a.get(s) || 0 }))
+      .filter(r => r.before || r.after);
   },
 
   /** cohort x months-since-install, cumulative activation %, maturity-masked */
@@ -218,8 +314,9 @@ const AGG = {
     const ab = DS.cols.activated_by, rt = DS.cols.referrals_total.v,
           rc = DS.cols.referrals_converted.v, isRef = DS.cols.is_referrer.v,
           dtf = DS.cols.days_to_first_referral.v;
+    const suc = DS.cols.is_successful_referrer ? DS.cols.is_successful_referrer.v : null;
     const acc = Object.fromEntries(SOURCES.map(s =>
-      [s, { source: s, referrers: 0, referrals: 0, converted: 0, repeat: 0, days: [] }]));
+      [s, { source: s, referrers: 0, referrals: 0, converted: 0, repeat: 0, successful: 0, days: [] }]));
     let totalReferrers = 0;
     for (const i of idx) {
       if (!isRef[i]) continue;
@@ -229,6 +326,7 @@ const AGG = {
       if (!a) continue;
       totalReferrers++;
       a.referrers++;
+      if (suc && suc[i]) a.successful++;
       a.referrals += rt[i] || 0;
       a.converted += rc[i] || 0;
       if ((rt[i] || 0) >= 2) a.repeat++;
@@ -239,6 +337,8 @@ const AGG = {
       return {
         source: s,
         referrers: a.referrers,
+        successful: a.successful,
+        successShare: pct(a.successful, a.referrers),
         share: pct(a.referrers, totalReferrers),
         referrals: a.referrals,
         avgReferrals: a.referrers ? +(a.referrals / a.referrers).toFixed(2) : 0,

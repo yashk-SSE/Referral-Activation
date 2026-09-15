@@ -1,0 +1,42 @@
+{
+  "_comment": [
+    "Sub-Channel under the Referral channel. Mapping is per Yash's spec (2026-09-15).",
+    "",
+    "Matching normalises: lowercase + all whitespace removed. That makes the three",
+    "Ops spellings below collapse correctly, including the spaced variant.",
+    "",
+    "Online vs CApp both come from referrer_role = 'Customer' and are split on",
+    "utm_campaign. NOTE: in the warehouse today utm_campaign is 'customer_app' for",
+    "100% of Customer-role referrals, so Online currently resolves to zero rows.",
+    "The rule is kept because that could change.",
+    "",
+    "Both referrer_role and utm_campaign have a TRAILING SPACE in their real",
+    "column names -- see sql/02_referrals.sql.",
+    "",
+    "'SC - Referral Calling' does not appear in the data yet; kept for when it does."
+  ],
+
+  "role_map": {
+    "Sales": [
+      "Solar Consultant",
+      "LRM",
+      "Pre sales Team",
+      "SC - Referral Calling"
+    ],
+    "BTL": [
+      "BTL"
+    ],
+    "Ops/AMC": [
+      "CDM",
+      "NPS Sweep Team",
+      "Ops ( project/ liaising /O&M /others )",
+      "Ops(Projects/liaising/O&M/Others)",
+      "Ops(project/liasing/O&M/others)"
+    ]
+  },
+
+  "customer_role": "Customer",
+  "capp_campaign": "customer_app",
+
+  "display_order": ["Sales", "Online", "CApp", "BTL", "Ops/AMC", "Others"]
+}

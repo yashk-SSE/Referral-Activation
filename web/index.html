@@ -29,7 +29,7 @@
 
   <section class="filters" aria-label="Filters">
     <div class="filter">
-      <label for="fCohortFrom">Commissioned from</label>
+      <label for="fCohortFrom">Installed from</label>
       <select id="fCohortFrom"></select>
     </div>
     <div class="filter">
@@ -55,7 +55,7 @@
 
   <nav class="tabs" role="tablist">
     <button role="tab" class="tab active" data-tab="overview">Overview</button>
-    <button role="tab" class="tab" data-tab="activation">Who activates them</button>
+    <button role="tab" class="tab" data-tab="activation">Sub-Channel</button>
     <button role="tab" class="tab" data-tab="coverage">Coverage gap</button>
   </nav>
 
@@ -63,10 +63,11 @@
   <section class="panel" data-panel="overview">
     <div class="card wide">
       <div class="card-head">
-        <h2>When customers refer</h2>
-        <p>Months between a customer&rsquo;s first referral and their own commissioning.
-           Bars left of zero are customers who referred <strong>before</strong> their system
-           was commissioned.</p>
+        <h2>When the first referral comes in</h2>
+        <p>Each referrer placed by where their <strong>first</strong> referral landed
+           relative to their own installation. Commissioning takes precedence: once a
+           system is commissioned the customer counts as <em>After commissioning</em>,
+           even if that happens inside the first 8 days.</p>
       </div>
       <div class="chart" id="chTiming"></div>
       <p class="finding" id="timingFinding"></p>
@@ -74,11 +75,11 @@
 
     <div class="card">
       <div class="card-head">
-        <h2>Activation by commissioning month</h2>
-        <p>Share of each month&rsquo;s customers who have referred at least once.</p>
-        <p class="caveat">The last few months sit low because those customers are still
-           inside the window when most referrals happen &mdash; not because they are
-           worse. Set a minimum age to compare fairly.</p>
+        <h2>Activation by installation month</h2>
+        <p>Share of each month&rsquo;s installed customers who have referred at least once.</p>
+        <p class="caveat">Recent months sit low because much of the referral window has
+           not passed yet &mdash; not because they are worse. Set a minimum age to compare
+           fairly.</p>
       </div>
       <div class="chart" id="chCohort"></div>
     </div>
@@ -96,28 +97,41 @@
   <section class="panel" data-panel="activation" hidden>
     <div class="card">
       <div class="card-head">
-        <h2>What activated each referrer</h2>
-        <p>Attributed to whoever prompted their <strong>first</strong> referral.</p>
+        <h2>Sub-Channel of first referral</h2>
+        <p>Which Sub-Channel under Referral activated each customer, taken from the
+           referrer role on their first referral.</p>
       </div>
       <div class="chart" id="chSource"></div>
     </div>
 
     <div class="card">
       <div class="card-head">
-        <h2>Mix over time</h2>
-        <p>Share of activations by channel, per commissioning month.</p>
+        <h2>Before vs after installation</h2>
+        <p>A customer who referred on both sides of their installation is counted in
+           both bars, so these do not sum to the referrer count.</p>
       </div>
-      <div class="chart" id="chSourceShare"></div>
+      <div class="chart" id="chBeforeAfter"></div>
     </div>
 
     <div class="card wide">
       <div class="card-head">
-        <h2>Channel quality</h2>
-        <p>Volume is not the whole story. <em>Refers again</em> is the share who gave a
-           second referral; <em>became orders</em> is the share of their referrals that
-           closed.</p>
+        <h2>Sub-Channel quality</h2>
+        <p>A <em>successful referrer</em> is one whose referral became an order.
+           <em>Refers again</em> is the share who gave a second referral.</p>
       </div>
       <div id="tblSource" class="table-wrap"></div>
+    </div>
+
+    <div class="card wide">
+      <div class="card-head">
+        <h2>How fast the referral is captured, before installation</h2>
+        <p>Days from <strong>HOTO</strong> to the first referral, for customers who
+           referred before their system was installed.</p>
+        <p class="caveat">Negative means the referral was captured <strong>before</strong>
+           the HOTO milestone was recorded &mdash; common for Sales, where the consultant
+           takes the referral around handover. Customers with no HOTO date are excluded.</p>
+      </div>
+      <div id="tblTat" class="table-wrap"></div>
     </div>
   </section>
 
@@ -157,8 +171,8 @@
 
 <!-- vendored so the dashboard works behind corporate networks that block CDNs -->
 <script src="vendor/echarts.min.js?v=79a8b5a0"></script>
-<script src="js/data.js?v=01d80340"></script>
-<script src="js/charts.js?v=a57f4793"></script>
-<script src="js/app.js?v=c6ebe0b1"></script>
+<script src="js/data.js?v=d4ce8675"></script>
+<script src="js/charts.js?v=2d23503d"></script>
+<script src="js/app.js?v=c0e92536"></script>
 </body>
 </html>

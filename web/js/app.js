@@ -87,28 +87,33 @@ function kpi(label, value, note) {
 
 function renderKPIs(s, split) {
   document.getElementById('kpis').innerHTML = [
-    kpi('Customers', fmtInt(s.customers), 'commissioned in range'),
-    kpi('Referred at least once', fmtInt(s.referrers), `${fmtPct(s.rate)} of the base`),
+    kpi('Installed', fmtInt(s.customers), 'customers in range'),
+    kpi('Referrers', fmtInt(s.referrers), `${fmtPct(s.rate)} of the base`),
+    kpi('Successful referrers', fmtInt(s.successful), `${fmtPct(s.successRate)} of the base`),
     kpi('Never referred', fmtInt(s.customers - s.referrers), `${fmtPct(100 - s.rate)} of the base`),
     kpi('Referrals given', fmtInt(s.referrals), `${s.perReferrer} per referrer`),
     kpi('Became orders', fmtInt(s.converted), `${fmtPct(s.convRate)} of referrals`),
-    kpi('Referred before commissioning', fmtPct(split.prePct), `${fmtInt(split.pre)} of ${fmtInt(split.total)} referrers`)
+    kpi('Referred before install', fmtPct(split.prePct), `${fmtInt(split.pre)} of ${fmtInt(split.total)} referrers`)
   ].join('');
 }
 
 /* ---------------------------------------------------------------------- */
 const PANELS = {
   overview(idx, s) {
-    const timing = AGG.timingHistogram(idx);
-    chartTiming(timing);
+    const buckets = AGG.timingBuckets(idx);
+    chartTimingBuckets(buckets);
 
-    const split = AGG.preInstallSplit(idx);
-    const peak = timing.reduce((a, b) => (b.count > a.count ? b : a), timing[0] || { label: '—', pct: 0 });
-    document.getElementById('timingFinding').innerHTML = peak.count
-      ? `<strong>${fmtPct(split.prePct)}</strong> of referrers refer before their own system is
-         commissioned. The single biggest month is <strong>${peak.label}</strong>
-         (${fmtPct(peak.pct)} of all first referrals) &mdash; the window that matters is the
-         sale and installation period, not the months after handover.`
+    const tat = AGG.preInstallTAT(idx).overall;
+    const before = buckets.find(b => b.bucket === 'Before installation');
+    const window0to7 = buckets
+      .filter(b => b.bucket.startsWith('Install + 0-3') || b.bucket.startsWith('Install + 4-7'))
+      .reduce((n, b) => n + b.pct, 0);
+    document.getElementById('timingFinding').innerHTML = buckets.length
+      ? `<strong>${fmtPct(before ? before.pct : 0)}</strong> of referrers give their first
+         referral <strong>before installation</strong>` +
+        (tat ? `, a median of <strong>${fmtInt(tat.p50)} days</strong> after HOTO
+         (p90 ${fmtInt(tat.p90)} days)` : '') +
+        `. A further ${fmtPct(window0to7)} come in within a week of installation.`
       : '';
 
     chartCohort(AGG.volumeByCohort(idx));
@@ -118,17 +123,34 @@ const PANELS = {
   activation(idx, s) {
     const stats = AGG.sourceStats(idx);
     chartSource(stats);
-    chartSourceShare(AGG.sourceMixByCohort(idx));
+    chartBeforeAfter(AGG.subChannelBeforeAfter(idx));
+
+    const dot = v =>
+      `<span style="color:${SOURCE_COLOR[v] || '#94a3b8'};font-weight:700">&#9679;</span> ${v}`;
     renderTable('tblSource', [
-      { key: 'source', label: 'Activated by',
-        fmt: v => `<span style="color:${SOURCE_COLOR[v] || '#94a3b8'};font-weight:700">&#9679;</span> ${v}` },
+      { key: 'source', label: 'Sub-Channel', fmt: dot },
       { key: 'referrers', label: 'Referrers', num: true, bar: true },
       { key: 'share', label: 'Share', num: true, pct: true },
+      { key: 'successful', label: 'Successful', num: true },
+      { key: 'successShare', label: 'Success rate', num: true, pct: true },
       { key: 'referrals', label: 'Referrals', num: true },
       { key: 'avgReferrals', label: 'Each gave', num: true, fmt: v => v.toFixed(2) },
       { key: 'repeatRate', label: 'Refers again', num: true, pct: true },
       { key: 'convRate', label: 'Became orders', num: true, pct: true }
     ], stats, { sortKey: 'referrers' });
+
+    const tat = AGG.preInstallTAT(idx);
+    const rows = tat.bySubChannel.slice();
+    if (tat.overall) rows.push({ sub_channel: 'All', ...tat.overall });
+    renderTable('tblTat', [
+      { key: 'sub_channel', label: 'Sub-Channel',
+        fmt: (v, r) => (v === 'All' ? `<strong>${v}</strong>` : dot(v)) },
+      { key: 'n', label: 'Referrers', num: true, bar: true },
+      { key: 'p50', label: 'p50 days from HOTO', num: true,
+        fmt: v => (v < 0 ? `${fmtInt(-v)}d before` : `${fmtInt(v)}d after`) },
+      { key: 'p90', label: 'p90 days from HOTO', num: true,
+        fmt: v => (v < 0 ? `${fmtInt(-v)}d before` : `${fmtInt(v)}d after`) }
+    ], rows, { sortKey: 'n' });
   },
 
   coverage(idx, s) {

@@ -7,8 +7,9 @@
 -- transform.py.
 --
 -- Two schema quirks worth knowing:
---   1. "referrer_role " has a TRAILING SPACE in the actual column name.
---      Dropping it gives: column r.referrer_role does not exist.
+--   1. "referrer_role " AND "utm_campaign " both have a TRAILING SPACE in
+--      their actual column names. Dropping it gives:
+--      column r.referrer_role does not exist.
 --   2. public.lead has many rows per prospectId, so it must be collapsed to
 --      one row before joining or the referral count fans out.
 --
@@ -23,6 +24,7 @@ SELECT
                                                  AS referral_date,
     NULLIF(TRIM(r."source"), '')                 AS referral_source,
     NULLIF(TRIM(r."referrer_role "), '')         AS referrer_role,
+    NULLIF(TRIM(r."utm_campaign "), '')          AS utm_campaign,
     NULLIF(TRIM(r."type"), '')                   AS referral_type,
     NULLIF(TRIM(r."status"), '')                 AS status,
     l.max_order_date                             AS converted_date,
