@@ -48,10 +48,17 @@ a number to anyone.
 ```bash
 pip install -r requirements.txt
 python etl/build.py --sample
-python -m http.server 8000 --directory web
 ```
 
-Open <http://localhost:8000>. The header shows a **SAMPLE DATA** badge so
+Then start the local server — double-click `serve.bat`, or:
+
+```bash
+python -m http.server 8765 --directory web
+```
+
+Open <http://localhost:8765>. Opening `web/index.html` directly from disk will
+not work: the page loads its data with `fetch()`, which browsers block on
+`file://` URLs. The header shows a **SAMPLE DATA** badge so
 synthetic numbers can never be mistaken for real ones.
 
 ---
