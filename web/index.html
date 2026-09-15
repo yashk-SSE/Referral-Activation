@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Referral Cohorts</title>
-<link rel="stylesheet" href="styles.css?v=47269bf1">
+<link rel="stylesheet" href="styles.css?v=18bc7544">
 </head>
 <body>
 
@@ -36,9 +36,9 @@
       <label for="fCohortTo">to</label>
       <select id="fCohortTo"></select>
     </div>
-    <div class="filter"><label>State</label><div id="fState" class="multi"></div></div>
-    <div class="filter"><label>Cluster</label><div id="fBranch" class="multi"></div></div>
-    <div class="filter"><label>System size</label><div id="fCapacity" class="multi"></div></div>
+    <div class="filter"><label>State</label><div id="fState" class="ms"></div></div>
+    <div class="filter"><label>City</label><div id="fCity" class="ms"></div></div>
+    <div class="filter"><label>Cluster</label><div id="fBranch" class="ms"></div></div>
     <div class="filter grow-end">
       <label for="fMaturity">Minimum age</label>
       <select id="fMaturity">
@@ -124,6 +124,20 @@
 
     <div class="card wide">
       <div class="card-head">
+        <h2>Inside Others</h2>
+        <p>Others is the largest bucket after Sales, and it is not one population.
+           Splitting it on the underlying referral source shows most of it is
+           explainable rather than unknown.</p>
+        <p class="caveat">Only the last row is genuinely unattributed. The rest are
+           real routes that simply have no employee role attached &mdash; chiefly
+           customers referring on their own, and SolarPro partners.</p>
+      </div>
+      <div class="chart" id="chOthers"></div>
+      <div id="tblOthers" class="table-wrap"></div>
+    </div>
+
+    <div class="card wide">
+      <div class="card-head">
         <h2>How fast the referral is captured, before installation</h2>
         <p>Days from <strong>HOTO</strong> to the first referral, for customers who
            referred before their system was installed.</p>
@@ -171,8 +185,8 @@
 
 <!-- vendored so the dashboard works behind corporate networks that block CDNs -->
 <script src="vendor/echarts.min.js?v=79a8b5a0"></script>
-<script src="js/data.js?v=d4ce8675"></script>
-<script src="js/charts.js?v=2d23503d"></script>
-<script src="js/app.js?v=c0e92536"></script>
+<script src="js/data.js?v=a115ae8a"></script>
+<script src="js/charts.js?v=e9d745db"></script>
+<script src="js/app.js?v=181f690a"></script>
 </body>
 </html>

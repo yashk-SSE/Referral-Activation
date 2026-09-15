@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light;
   --bg: #f6f7f9;
   --surface: #ffffff;
   --surface-2: #fafbfc;
@@ -14,24 +15,6 @@
   --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 1px 3px rgba(16, 24, 40, .06);
   --radius: 10px;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f1216;
-    --surface: #171b21;
-    --surface-2: #1c2128;
-    --border: #272d36;
-    --border-strong: #39414c;
-    --text: #e8ecf1;
-    --text-2: #a3adba;
-    --text-3: #6f7a88;
-    --accent: #6c9bec;
-    --accent-soft: #1d2a40;
-    --good: #3fbc8a;
-    --bad: #e8705f;
-    --shadow: none;
-  }
-}
-
 * { box-sizing: border-box; }
 /* An explicit `display` on an element beats the UA stylesheet's [hidden] rule,
    so tab panels need this or they all show at once. */
@@ -69,10 +52,6 @@ h1, h2 { margin: 0; font-weight: 600; letter-spacing: -.01em; }
   border: 1px solid transparent;
 }
 .badge.sample { background: #fff4e0; color: #9a5b00; border-color: #f0d9b0; }
-@media (prefers-color-scheme: dark) {
-  .badge.sample { background: #33270f; color: #f0b65a; border-color: #4a3a17; }
-}
-
 /* ---- loading ---------------------------------------------------------- */
 .loading, .load-error { padding: 60px 24px; color: var(--text-2); text-align: center; }
 .load-error { color: var(--bad); white-space: pre-wrap; text-align: left; max-width: 760px; margin: 0 auto; }
@@ -97,25 +76,58 @@ h1, h2 { margin: 0; font-weight: 600; letter-spacing: -.01em; }
   background: var(--surface); color: var(--text); min-width: 108px;
 }
 .grow-end { margin-left: auto; }
-.multi {
-  display: flex; gap: 4px; flex-wrap: wrap;
-  max-width: 380px; max-height: 30px; overflow: hidden;
-  transition: max-height .15s ease;
-}
-.multi:hover, .multi:focus-within { max-height: 200px; overflow: auto; }
-.chip {
-  font-size: 12px; padding: 4px 9px; border-radius: 999px; cursor: pointer;
-  border: 1px solid var(--border-strong); background: var(--surface);
-  color: var(--text-2); white-space: nowrap; user-select: none;
-}
-.chip:hover { border-color: var(--accent); color: var(--accent); }
-.chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn-reset {
   font: inherit; font-size: 13px; padding: 6px 12px; cursor: pointer;
   border: 1px solid var(--border-strong); border-radius: 7px;
   background: var(--surface); color: var(--text-2);
 }
 .btn-reset:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ---- multi-select dropdown -------------------------------------------- */
+.ms { position: relative; }
+.ms-btn {
+  font: inherit; font-size: 13px; padding: 5px 26px 5px 9px; cursor: pointer;
+  border: 1px solid var(--border-strong); border-radius: 7px;
+  background: var(--surface); color: var(--text);
+  min-width: 132px; max-width: 210px; text-align: left;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ms-btn::after {
+  content: ""; position: absolute; right: 10px; top: 50%; pointer-events: none;
+  width: 0; height: 0; margin-top: -2px;
+  border-left: 4px solid transparent; border-right: 4px solid transparent;
+  border-top: 5px solid var(--text-3);
+}
+.ms-btn:hover { border-color: var(--accent); }
+.ms-btn.active { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.ms-panel {
+  position: absolute; z-index: 40; top: calc(100% + 4px); left: 0;
+  width: 250px; max-height: 300px; display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--border-strong);
+  border-radius: 8px; box-shadow: 0 6px 18px rgba(16, 24, 40, .12);
+}
+.ms-search {
+  font: inherit; font-size: 13px; margin: 8px; padding: 5px 8px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--text);
+}
+.ms-list { overflow-y: auto; padding: 0 4px 6px; }
+.ms-opt {
+  display: flex; align-items: center; gap: 8px; cursor: pointer;
+  padding: 5px 8px; border-radius: 5px; font-size: 13px; color: var(--text);
+}
+.ms-opt:hover { background: var(--surface-2); }
+.ms-opt input { margin: 0; accent-color: var(--accent); }
+.ms-opt .ms-n { margin-left: auto; color: var(--text-3); font-size: 11px; }
+.ms-foot {
+  border-top: 1px solid var(--border); padding: 6px 10px;
+  display: flex; justify-content: space-between; font-size: 12px;
+}
+.ms-foot button {
+  font: inherit; font-size: 12px; background: none; border: none;
+  color: var(--accent); cursor: pointer; padding: 0;
+}
+.ms-empty { padding: 10px; color: var(--text-3); font-size: 12px; }
 
 /* ---- KPIs ------------------------------------------------------------- */
 .kpis {
@@ -167,24 +179,6 @@ h1, h2 { margin: 0; font-weight: 600; letter-spacing: -.01em; }
 .chart { height: 280px; width: 100%; }
 .chart.tall { height: 380px; }
 
-/* ---- triangle --------------------------------------------------------- */
-.triangle-wrap { overflow-x: auto; }
-table.tri { border-collapse: separate; border-spacing: 2px; font-size: 11px; }
-table.tri th {
-  font-weight: 600; color: var(--text-3); font-size: 10px;
-  padding: 2px 6px; text-align: center; white-space: nowrap;
-}
-table.tri th.row-h { text-align: right; color: var(--text-2); font-size: 11px; }
-table.tri td {
-  width: 38px; height: 24px; text-align: center; border-radius: 4px;
-  font-variant-numeric: tabular-nums; color: #0d2233;
-}
-table.tri td.empty { background: transparent; }
-table.tri td.n { color: var(--text-2); background: none; text-align: right; padding-right: 6px; }
-.tri-legend { display: flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 11px; color: var(--text-3); }
-.tri-legend i { width: 22px; height: 11px; border-radius: 2px; display: inline-block; }
-.partial { color: var(--text-3); font-style: italic; }
-
 /* ---- tables ----------------------------------------------------------- */
 .table-wrap { overflow-x: auto; }
 .table-wrap.scroll { max-height: 340px; overflow-y: auto; }
@@ -213,8 +207,6 @@ table.data tbody tr:hover { background: var(--surface-2); }
   flex-wrap: wrap; padding: 4px 24px 28px; font-size: 11.5px; color: var(--text-3);
 }
 .warn { color: #9a5b00; }
-@media (prefers-color-scheme: dark) { .warn { color: #f0b65a; } }
-
 .card-head .caveat {
   margin-top: 6px; padding: 6px 9px; border-radius: 6px;
   background: var(--surface-2); border-left: 2px solid #e0862c;

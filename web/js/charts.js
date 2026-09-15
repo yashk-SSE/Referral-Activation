@@ -1,7 +1,9 @@
 /* ECharts builders + HTML table renderers. */
 'use strict';
 
-const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+// The dashboard is light-only; keeping one palette avoids chart colours
+// drifting away from the CSS tokens in a theme nobody reviewed.
+const isDark = false;
 const C = {
   text: isDark ? '#a3adba' : '#5a6470',
   textStrong: isDark ? '#e8ecf1' : '#16191d',
@@ -279,5 +281,47 @@ function renderTable(elId, columns, rows, opts) {
     const key = th.dataset.key;
     el._sort = { key, dir: state.key === key ? -state.dir : -1 };
     renderTable(elId, columns, rows, opts);
+  }));
+}
+
+/* ---------------------------------------------------------------------- */
+/* inside Others                                                           */
+/* ---------------------------------------------------------------------- */
+const OTHERS_COLOR = {
+  'Customer self-serve': '#17a2a2',
+  'SolarPro Partner (SPP)': '#8b5cf6',
+  'Employee-led, role not captured': '#e0862c',
+  'SSE employee': '#6366f1',
+  'HO Team & Others': '#94a3b8',
+  'Inbound cc team': '#64748b',
+  'Assure customer': '#0891b2',
+  'Unattributed (no role, no source)': '#b4bcc6'
+};
+
+function chartOthers(rows) {
+  const d = rows.slice().sort((a, b) => a.referrers - b.referrers);
+  mount('chOthers', Object.assign(BASE(), {
+    grid: { left: 8, right: 74, top: 12, bottom: 20, containLabel: true },
+    legend: { show: false },
+    tooltip: {
+      trigger: 'axis', backgroundColor: C.tooltipBg, borderColor: C.tooltipBorder,
+      borderWidth: 1, textStyle: { color: C.textStrong, fontSize: 12 },
+      formatter: p => {
+        const r = d[p[0].dataIndex];
+        return '<b>' + r.detail + '</b><br/>' + fmtInt(r.referrers) +
+               ' referrers (' + fmtPct(r.share) + ' of Others)<br/>' +
+               '<span style="color:' + C.text + '">' + fmtInt(r.successful) +
+               ' successful \u00b7 ' + fmtInt(r.referrals) + ' referrals</span>';
+      }
+    },
+    xAxis: AXIS_Y({ axisLabel: { show: false }, splitLine: { show: false } }),
+    yAxis: AXIS_X({ data: d.map(r => r.detail), axisLabel: { color: C.text, fontSize: 11 } }),
+    series: [{
+      type: 'bar', data: d.map(r => r.referrers), barMaxWidth: 20,
+      itemStyle: { color: p => OTHERS_COLOR[d[p.dataIndex].detail] || '#94a3b8',
+                   borderRadius: [0, 3, 3, 0] },
+      label: { show: true, position: 'right', color: C.text, fontSize: 10,
+               formatter: p => fmtInt(p.value) + '  (' + fmtPct(d[p.dataIndex].share) + ')' }
+    }]
   }));
 }

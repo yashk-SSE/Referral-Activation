@@ -123,12 +123,28 @@ Configured in `etl/sub_channel_map.json`; changing a bucket needs no code change
 5,290 of 5,290 Customer-role referrals, so all of them go to CApp. The rule is
 kept in case that changes.
 
-**Others is large — 26% of referrers.** It is dominated by referrals with a
-blank `referrer_role` (78,855 of them). Role is blank precisely when no employee
-mediated the referral: `Referral - Existing Cx via Emp` is 84.8% populated,
-`Referral - Existing Cx` is 0.0%. So the bulk of Others is customer-initiated
-referrals with no employee attached. `HO Team & Others` (1,112) and
-`Inbound cc team` (102) also land here, being unassigned in the spec.
+**Others is 25.9% of referrers, and is broken out a second level.** It is
+dominated by referrals with a blank `referrer_role`. Role is blank precisely
+when no employee mediated the referral: `Referral - Existing Cx via Emp` is
+84.8% populated, `Referral - Existing Cx` is 0.0%. So the bulk of Others is
+customers referring on their own.
+
+`others_detail` splits it using the underlying `referrals.source`, for
+referrers in the 24-month base:
+
+| Inside Others | Referrers | Share | Success rate |
+|---|---|---|---|
+| Customer self-serve (`Referral - Existing Cx` / `New Cx`, no role) | 4,996 | 88.8% | 40.2% |
+| Employee-led, role not captured (`Existing Cx via Emp`, no role) | 542 | 9.6% | 70.7% |
+| HO Team & Others (role present, unassigned in the spec) | 66 | 1.2% | 72.7% |
+| Unattributed (no role, no source) | 17 | 0.3% | 29.4% |
+| Inbound cc team (role present, unassigned in the spec) | 3 | 0.1% | 100.0% |
+| SolarPro Partner (SPP) | 2 | 0.0% | 100.0% |
+| SSE employee | 1 | 0.0% | 100.0% |
+
+Only 17 referrers are genuinely unattributed. SPP and SSE are near-zero because
+partners and employees are rarely installed customers themselves, so they drop
+out on the join to the base.
 
 `SC - Referral Calling` and the spaced Ops variant do not appear in the data
 yet; they are mapped for when they do.
@@ -177,7 +193,7 @@ count.
 
 ---
 
-## 7. "First referral" ordering
+## 7. "First referral" ordering and null handling
 
 Ordered by the **actual `createdAt` timestamp**, then `referral_id` as a
 tie-break — not by date alone.
@@ -186,6 +202,15 @@ This matters: 5,864 customers have more than one referral on their earliest
 date, and **220 of those carry different referrer roles**. Ordering by date
 alone makes "the first referral" ambiguous, and the Sub-Channel assigned to
 those customers becomes arbitrary and unstable between runs.
+
+The first referral's row is taken **positionally**, with
+`drop_duplicates(keep='first')` rather than `groupby().first()`. Pandas'
+`groupby().first()` skips nulls *per column*, so it will splice a later
+referral's value into the first referral's row wherever the first row is null —
+which overstated Others by 30% (7,324 against a true 5,627) until it was caught
+by cross-checking `others_detail` against `activated_by`. The same applies to
+the first project's row, where a later project's HOTO date could otherwise be
+spliced in.
 
 ---
 

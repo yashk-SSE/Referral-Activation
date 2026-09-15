@@ -106,6 +106,46 @@ def derive_sub_channel(
     return pd.Series(values, index=roles.index), unmapped
 
 
+def derive_others_detail(
+    sub_channels: pd.Series, roles: pd.Series, sources: pd.Series
+) -> pd.Series:
+    """Second level of detail for referrals that land in Others.
+
+    Others is a quarter of all referrers and is not one population: it mixes
+    customer self-serve referrals, SolarPro partners, employee referrals, and
+    employee-mediated referrals where the role simply was not captured. Those
+    warrant different actions, so the breakdown is carried rather than left as
+    a single opaque bucket.
+
+    Returns None for anything not in Others.
+    """
+    def _one(bucket: Any, role: Any, source: Any) -> str | None:
+        if bucket != "Others":
+            return None
+        if not _blank(role):
+            # A role that exists but is unmapped -- name it rather than hide it.
+            return str(role).strip()
+        if _blank(source):
+            return "Unattributed (no role, no source)"
+        key = _norm(source)
+        if "spp" in key:
+            return "SolarPro Partner (SPP)"
+        if "sseemp" in key:
+            return "SSE employee"
+        if "existingcxviaemp" in key:
+            return "Employee-led, role not captured"
+        if "existingcx" in key or "newcx" in key:
+            return "Customer self-serve"
+        if "assure" in key:
+            return "Assure customer"
+        return f"Source: {str(source).strip()}"
+
+    return pd.Series(
+        [_one(b, r, s) for b, r, s in zip(sub_channels, roles, sources)],
+        index=sub_channels.index,
+    )
+
+
 # ---------------------------------------------------------------------------
 # referral timing
 # ---------------------------------------------------------------------------
@@ -178,6 +218,11 @@ def build_customer_base(
     referrals["sub_channel"], unmapped = derive_sub_channel(
         referrals["referrer_role"], referrals["utm_campaign"], mapping
     )
+    if "referral_source" not in referrals.columns:
+        referrals["referral_source"] = None
+    referrals["others_detail"] = derive_others_detail(
+        referrals["sub_channel"], referrals["referrer_role"], referrals["referral_source"]
+    )
     if "converted_date" in referrals.columns:
         referrals["converted_date"] = _to_date(referrals["converted_date"])
     else:
@@ -189,8 +234,11 @@ def build_customer_base(
     )
 
     # --- customer base, cohorted on FIRST installation ---------------------
-    installs = installs.sort_values("install_date")
-    first = installs.groupby("customer_id", as_index=False).first()
+    installs = installs.sort_values("install_date", kind="mergesort")
+    # drop_duplicates, not groupby().first(): groupby().first() skips nulls
+    # PER COLUMN, so it can splice a later project's HOTO date onto the first
+    # project's row. We want the first project's row exactly as it stands.
+    first = installs.drop_duplicates(subset="customer_id", keep="first")
     rollup = installs.groupby("customer_id", as_index=False).agg(
         first_install_date=("install_date", "min"),
         install_count=("install_id", "nunique"),
@@ -231,8 +279,9 @@ def build_customer_base(
         """Sub-Channel of the earliest referral in `frame`, per customer."""
         if frame.empty:
             return pd.DataFrame(columns=["referrer_customer_id", label])
-        firsts = frame.sort_values(["referral_ts", "referral_id"], kind="mergesort").groupby(
-            "referrer_customer_id", as_index=False).first()
+        firsts = frame.sort_values(
+            ["referral_ts", "referral_id"], kind="mergesort"
+        ).drop_duplicates(subset="referrer_customer_id", keep="first")
         return firsts[["referrer_customer_id", "sub_channel"]].rename(
             columns={"sub_channel": label})
 
@@ -244,12 +293,18 @@ def build_customer_base(
                     on="referrer_customer_id", how="left")
 
     # timing bucket of the FIRST referral -- what actually activated them
-    first_ref = ref.sort_values(["referral_ts", "referral_id"], kind="mergesort").groupby(
-        "referrer_customer_id", as_index=False).first()
+    # Same reason as above: others_detail is null whenever the referral is not
+    # in the Others Sub-Channel, and groupby().first() would skip past those
+    # nulls to a later referral -- overstating Others by ~30%.
+    first_ref = ref.sort_values(
+        ["referral_ts", "referral_id"], kind="mergesort"
+    ).drop_duplicates(subset="referrer_customer_id", keep="first")
     agg = agg.merge(
-        first_ref[["referrer_customer_id", "timing_bucket", "days_from_hoto"]].rename(
+        first_ref[["referrer_customer_id", "timing_bucket", "days_from_hoto",
+                   "others_detail"]].rename(
             columns={"timing_bucket": "first_timing_bucket",
-                     "days_from_hoto": "first_tat_from_hoto"}),
+                     "days_from_hoto": "first_tat_from_hoto",
+                     "others_detail": "others_detail"}),
         on="referrer_customer_id", how="left")
 
     base = base.merge(agg, left_on="customer_id", right_on="referrer_customer_id",

@@ -87,9 +87,8 @@ function applyFilters(f) {
     return s;
   };
   const stateS = codeSet('state', f.state);
+  const cityS = codeSet('city', f.city);
   const branchS = codeSet('branch', f.branch);
-  const chanS = codeSet('acquisition_channel', f.channel);
-  const capS = codeSet('capacity_band', f.capacity);
   const mat = DS.cols.maturity_months.v;
 
   for (let i = 0; i < DS.n; i++) {
@@ -97,9 +96,8 @@ function applyFilters(f) {
     if (cm < f.cohortFrom || cm > f.cohortTo) continue;
     if (f.maturityMin && mat[i] < f.maturityMin) continue;
     if (stateS && !stateS.has(DS.cols.state.v[i])) continue;
+    if (cityS && !cityS.has(DS.cols.city.v[i])) continue;
     if (branchS && !branchS.has(DS.cols.branch.v[i])) continue;
-    if (chanS && !chanS.has(DS.cols.acquisition_channel.v[i])) continue;
-    if (capS && !capS.has(DS.cols.capacity_band.v[i])) continue;
     out.push(i);
   }
   return out;
@@ -242,6 +240,40 @@ const AGG = {
     return SOURCES
       .map(s => ({ sub_channel: s, before: b.get(s) || 0, after: a.get(s) || 0 }))
       .filter(r => r.before || r.after);
+  },
+
+  /** What is actually inside the Others Sub-Channel.
+   *
+   * Others is a quarter of all referrers and mixes populations that need
+   * different responses: customer self-serve referrals, SolarPro partners, SSE
+   * employees, and employee-led referrals where the role was simply never
+   * captured. As one bucket it reads as noise; split, most of it is explained.
+   */
+  othersBreakdown(idx) {
+    const col = DS.cols.others_detail;
+    if (!col) return [];
+    const isRef = DS.cols.is_referrer.v;
+    const rt = DS.cols.referrals_total.v;
+    const suc = DS.cols.is_successful_referrer ? DS.cols.is_successful_referrer.v : null;
+    const m = new Map();
+    let total = 0;
+    for (const i of idx) {
+      if (!isRef[i]) continue;
+      const v = col.v[i];
+      if (v === null || v === undefined) continue;
+      const k = col.levels[v];
+      let a = m.get(k);
+      if (!a) m.set(k, a = { detail: k, referrers: 0, successful: 0, referrals: 0 });
+      a.referrers++;
+      a.referrals += rt[i] || 0;
+      if (suc && suc[i]) a.successful++;
+      total++;
+    }
+    return [...m.values()]
+      .map(a => ({ ...a,
+                   share: pct(a.referrers, total),
+                   successShare: pct(a.successful, a.referrers) }))
+      .sort((x, y) => y.referrers - x.referrers);
   },
 
   /** cohort x months-since-install, cumulative activation %, maturity-masked */
