@@ -23,13 +23,11 @@ SUB_CHANNELS: list[str] = []
 
 # Referral timing, relative to the customer's own installation. Commissioning
 # always truncates the post-install windows -- see assign_timing_bucket.
-TIMING_BUCKETS = [
-    "Before installation",
-    "Install + 0-3 days",
-    "Install + 4-7 days",
-    "Install + 8 days to commissioning",
-    "After commissioning",
-]
+# Reporting buckets inside the activation window, plus the two out-of-window
+# states. Filled from funnel_config.json at load time.
+TIMING_BUCKETS: list[str] = []
+BLINDSPOT = "Before window (blindspot)"
+AFTER_WINDOW = "After window"
 
 
 # ---------------------------------------------------------------------------
@@ -166,30 +164,58 @@ def derive_sub_channel_detail(
 # ---------------------------------------------------------------------------
 # referral timing
 # ---------------------------------------------------------------------------
-def assign_timing_bucket(
-    ref_date: Any, install_date: Any, commissioning_date: Any
-) -> str | None:
-    """Which window a referral falls in, relative to the customer's install.
+def load_activation_config(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Resolve the activation window and publish its bucket labels."""
+    global TIMING_BUCKETS
+    act = cfg.get("activation", {})
+    subs = act.get("sub_windows", [])
+    TIMING_BUCKETS = [BLINDSPOT] + [w["label"] for w in subs] + [AFTER_WINDOW]
+    return {
+        "start": act.get("window_start_days", -3),
+        "end": act.get("window_end_days", 90),
+        "sub_windows": subs,
+    }
 
-    Commissioning takes precedence over the day-count windows: once a system is
-    commissioned the customer is a live user, not someone mid-installation, so
-    a referral on day 5 of a system commissioned on day 4 is "After
-    commissioning" rather than "Install + 4-7 days". That is the
-    "if commissioning happens in between, take commissioning first" rule.
+
+def assign_timing_bucket(
+    ref_date: Any, install_date: Any, commissioning_date: Any, act: dict[str, Any]
+) -> str | None:
+    """Which activation sub-window a referral falls in.
+
+    Days are measured from INSTALLATION, so -3 means three days before it.
+
+    Anything earlier than the window start is the blindspot: those referrals
+    predate the customer having a working system and carry too much noise to
+    attribute, so they are excluded from every activation metric.
+
+    The final sub-window is capped at commissioning where the config says so --
+    once commissioned the customer is a live user, not someone mid-installation,
+    so a referral after commissioning is out of that bucket even if it is still
+    inside the day range.
     """
     if pd.isna(ref_date) or pd.isna(install_date):
         return None
-    if ref_date < install_date:
-        return "Before installation"
-    commissioned = not pd.isna(commissioning_date)
-    if commissioned and ref_date >= commissioning_date:
-        return "After commissioning"
     days = (ref_date - install_date).days
-    if days <= 3:
-        return "Install + 0-3 days"
-    if days <= 7:
-        return "Install + 4-7 days"
-    return "Install + 8 days to commissioning"
+    if days < act["start"]:
+        return BLINDSPOT
+    if days > act["end"]:
+        return AFTER_WINDOW
+
+    commissioned = not pd.isna(commissioning_date)
+    comm_days = (commissioning_date - install_date).days if commissioned else None
+
+    for w in act["sub_windows"]:
+        lo = w.get("start")
+        hi = w.get("end")
+        if hi is None:
+            hi = act["end"]
+        if w.get("cap_at_commissioning") and comm_days is not None:
+            hi = min(hi, comm_days)
+        if lo <= days <= hi:
+            return w["label"]
+    # Past the last sub-window but still inside the overall window -- that is
+    # what "or commissioning, whichever comes first" leaves behind.
+    return AFTER_WINDOW
 
 
 # ---------------------------------------------------------------------------
@@ -212,6 +238,34 @@ def load_funnel_config(path: str) -> dict[str, Any]:
 
 
 def attach_funnel(
+    base: pd.DataFrame,
+    installs: pd.DataFrame,
+    nps: pd.DataFrame | None,
+    idv: pd.DataFrame | None,
+    cfg: dict[str, Any],
+) -> pd.DataFrame:
+    """Cx Recommended and IDV.
+
+    Both are PLACEHOLDERS until a source is agreed. When disabled the columns
+    are all-null rather than all-false, so the dashboard can render a dash
+    instead of a zero -- "we have no source" and "we did none" are different
+    statements and a zero would assert the wrong one.
+    """
+    if not cfg.get("cx_recommended", {}).get("enabled"):
+        base["nps_answered"] = pd.NA
+        base["cx_recommended"] = pd.NA
+        base["nps_score"] = pd.NA
+        nps = None
+    if not cfg.get("idv", {}).get("enabled"):
+        base["idv_done"] = pd.NA
+        base["idv_count"] = pd.NA
+        idv = None
+    if nps is None and idv is None:
+        return base
+    return _attach_funnel_live(base, installs, nps, idv, cfg)
+
+
+def _attach_funnel_live(
     base: pd.DataFrame,
     installs: pd.DataFrame,
     nps: pd.DataFrame | None,
@@ -270,42 +324,72 @@ def attach_funnel(
     return base
 
 
-def funnel_summary(base: pd.DataFrame, cfg: dict[str, Any]) -> dict:
-    """The stage-by-stage funnel, with non-response reported separately."""
+def funnel_summary(base: pd.DataFrame, cfg: dict[str, Any], act: dict[str, Any]) -> dict:
+    """Stage-by-stage funnel. Disabled stages report customers=None, not 0."""
     n = len(base)
-    rec_cfg = cfg.get("cx_recommended", {})
-    idv_cfg = cfg.get("idv", {})
+    rec_on = bool(cfg.get("cx_recommended", {}).get("enabled"))
+    idv_on = bool(cfg.get("idv", {}).get("enabled"))
 
-    def block(mask: "pd.Series | bool", label: str) -> dict:
-        count = int(mask.sum()) if hasattr(mask, "sum") else 0
+    def block(col: str, label: str, enabled: bool = True) -> dict:
+        if not enabled or col not in base.columns:
+            return {"stage": label, "customers": None, "pct_of_base": None,
+                    "placeholder": True}
+        count = int(base[col].fillna(False).astype(bool).sum())
         return {"stage": label, "customers": count,
                 "pct_of_base": round(100 * count / n, 2) if n else 0.0}
 
-    stages = [
-        {"stage": "Installed", "customers": n, "pct_of_base": 100.0},
-        block(base["nps_answered"], "Answered the survey"),
-        block(base["cx_recommended"], "Cx Recommended"),
-        block(base["idv_done"], "IDV done"),
-        block(base["is_referrer"], "Referrer"),
-        block(base["is_successful_referrer"], "Successful referrer"),
-    ]
-    answered = int(base["nps_answered"].sum())
     return {
-        "stages": stages,
+        "stages": [
+            {"stage": "Installed", "customers": n, "pct_of_base": 100.0},
+            block("cx_recommended", "Cx Recommended", rec_on),
+            block("idv_done", "IDV done", idv_on),
+            block("referrer_activated", "Referrer activated"),
+            block("successful_activated", "Successful referrer activated"),
+        ],
         "config": {
-            "min_score": rec_cfg.get("min_score", 9),
-            "scale_max": rec_cfg.get("scale_max", 10),
-            "idv_task_keys": idv_cfg.get("task_keys", []),
-            "idv_days_before": idv_cfg.get("days_before", 3),
-            "idv_days_after": idv_cfg.get("days_after", 3),
-        },
-        "survey_coverage": {
-            "answered": answered,
-            "answered_pct": round(100 * answered / n, 2) if n else 0.0,
-            "recommended_of_answered": round(
-                100 * int(base["cx_recommended"].sum()) / answered, 2) if answered else 0.0,
+            "cx_recommended_enabled": rec_on,
+            "idv_enabled": idv_on,
+            "window_start_days": act["start"],
+            "window_end_days": act["end"],
+            "sub_windows": [w["label"] for w in act["sub_windows"]],
         },
     }
+
+
+def city_table(base: pd.DataFrame, dim: str = "city") -> list[dict]:
+    """The Sales tracking table: one row per city, plus an India total.
+
+    Activation counts use the window, not lifetime referral, so this table and
+    the funnel agree. Cx Recommended and IDV are None while they are
+    placeholders.
+    """
+    def row(frame: pd.DataFrame, label: str) -> dict:
+        n = len(frame)
+        act = int(frame["referrer_activated"].sum())
+        suc = int(frame["successful_activated"].sum())
+        leads = int(frame["leads_in_window"].sum())
+        orders = int(frame["orders_in_window"].sum())
+        has_rec = frame["cx_recommended"].notna().any() if "cx_recommended" in frame else False
+        has_idv = frame["idv_done"].notna().any() if "idv_done" in frame else False
+        return {
+            "name": label,
+            "installed": n,
+            "cx_recommended": int(frame["cx_recommended"].fillna(False).sum()) if has_rec else None,
+            "idv": int(frame["idv_done"].fillna(False).sum()) if has_idv else None,
+            "referrer_activated": act,
+            "successful_activated": suc,
+            "leads": leads,
+            "orders": orders,
+            "activation_rate": round(100 * act / n, 2) if n else 0.0,
+            "leads_per_referrer": round(leads / act, 2) if act else 0.0,
+            "orders_per_referrer": round(orders / act, 2) if act else 0.0,
+        }
+
+    rows = [row(base, "India (all)")]
+    if dim in base.columns:
+        for key in sorted(x for x in base[dim].dropna().unique()):
+            rows.append(row(base[base[dim] == key], str(key)))
+    return rows
 
 
 def build_customer_base(
@@ -313,6 +397,7 @@ def build_customer_base(
     referrals: pd.DataFrame,
     mapping: dict[str, Any],
     as_of: date,
+    act: dict[str, Any] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, Counter]:
     installs = installs.copy()
     referrals = referrals.copy()
@@ -365,7 +450,10 @@ def build_customer_base(
         capacity_kw=("capacity_kw", "sum"),
         order_value=("order_value", "sum"),
     )
-    attrs = [c for c in ("state", "city", "branch", "hoto_date", "commissioning_date")
+    attrs = [c for c in ("install_id", "state", "city", "branch",
+                         "hoto_date", "commissioning_date",
+                         "customer_name", "order_booked_date", "sc_name", "sc_email",
+                         "installation_champion", "installation_champion_email")
              if c in first.columns]
     base = rollup.merge(first[["customer_id", *attrs]], on="customer_id", how="left")
 
@@ -376,11 +464,15 @@ def build_customer_base(
         base[["customer_id", "first_install_date", "hoto_date", "commissioning_date"]],
         left_on="referrer_customer_id", right_on="customer_id", how="inner",
     )
+    act = act or {"start": -3, "end": 90, "sub_windows": []}
     ref["timing_bucket"] = [
-        assign_timing_bucket(r, i, c)
+        assign_timing_bucket(r, i, c, act)
         for r, i, c in zip(ref["referral_date"], ref["first_install_date"],
                            ref["commissioning_date"])
     ]
+    # The blindspot rule: referrals before the window start are noise and take
+    # no part in any activation metric.
+    ref["in_window"] = ref["timing_bucket"].notna() & (ref["timing_bucket"] != BLINDSPOT)                        & (ref["timing_bucket"] != AFTER_WINDOW)
     ref["is_pre_install"] = ref["referral_date"] < ref["first_install_date"]
     ref["days_from_install"] = (ref["referral_date"] - ref["first_install_date"]).dt.days
     # TAT for pre-installation referrals is measured from HOTO, not from install.
@@ -427,6 +519,17 @@ def build_customer_base(
                      "sub_channel_detail": "sub_channel_detail"}),
         on="referrer_customer_id", how="left")
 
+    # --- activation, from in-window referrals only -------------------------
+    win = ref[ref["in_window"]]
+    act_agg = win.groupby("referrer_customer_id", as_index=False).agg(
+        leads_in_window=("referral_id", "nunique"),
+        orders_in_window=("is_converted", "sum"),
+        first_activation_date=("referral_date", "min"),
+    )
+    agg = agg.merge(act_agg, on="referrer_customer_id", how="left")
+    agg = agg.merge(_first_sub_channel(win, "activated_by_window"),
+                    on="referrer_customer_id", how="left")
+
     base = base.merge(agg, left_on="customer_id", right_on="referrer_customer_id",
                       how="left").drop(columns=["referrer_customer_id"], errors="ignore")
 
@@ -437,6 +540,16 @@ def build_customer_base(
     # "Successful referrer" = at least one referral that became an order.
     base["is_successful_referrer"] = base["referrals_converted"] > 0
     base["activated_by"] = base["activated_by"].where(base["is_referrer"], None)
+
+    # --- activation flags (the metrics Sales is tracked on) ----------------
+    base["leads_in_window"] = base["leads_in_window"].fillna(0).astype(int)
+    base["orders_in_window"] = base["orders_in_window"].fillna(0).astype(int)
+    base["referrer_activated"] = base["leads_in_window"] > 0
+    base["successful_activated"] = base["orders_in_window"] > 0
+    base["activated_by_window"] = base["activated_by_window"].where(
+        base["referrer_activated"], None)
+    base["days_to_activation"] = (
+        base["first_activation_date"] - base["first_install_date"]).dt.days
 
     base["cohort_month"] = base["first_install_date"].dt.strftime("%Y-%m")
     as_of_ts = pd.Timestamp(as_of)

@@ -33,14 +33,21 @@ PUBLIC_COLUMNS = [
     "cohort_month", "state", "city", "branch", "capacity_band",
     "install_count", "capacity_kw", "order_value",
     "is_referrer", "is_successful_referrer", "activated_by",
-    "nps_answered", "cx_recommended", "nps_score", "idv_done", "idv_count",
+    "nps_answered", "cx_recommended", "idv_done",
+    "referrer_activated", "successful_activated", "leads_in_window",
+    "orders_in_window", "activated_by_window", "days_to_activation",
     "sub_channel_pre", "sub_channel_post", "sub_channel_detail",
     "first_timing_bucket", "first_tat_from_hoto",
     "referrals_total", "referrals_converted", "months_to_first_referral",
     "days_to_first_referral", "pre_install_referrer", "maturity_months",
 ]
+# Drill-down fields. These carry customer and employee identity, so they ship
+# only in gated mode -- see docs/DEPLOY.md before publishing with them on.
 GATED_EXTRA = ["customer_id", "first_install_date", "first_referral_date",
-               "hoto_date", "commissioning_date"]
+               "hoto_date", "commissioning_date",
+               "install_id", "customer_name", "order_booked_date",
+               "sc_name", "sc_email", "installation_champion",
+               "installation_champion_email"]
 
 
 # ---------------------------------------------------------------------------
@@ -65,13 +72,18 @@ def fetch_live(lookback_months: int, funnel_cfg: dict) -> tuple[pd.DataFrame, ..
 
     # Cx Recommended -- small enough not to need pagination, but paginate anyway
     # so a growing survey feed never silently truncates at 2000 rows.
-    nps = pd.DataFrame(
-        mb.query_file(os.path.join(SQL_DIR, "03_cx_recommended.sql"), db_id,
-                      key="install_id")
-    )
-    print(f"  nps responses: {len(nps):,} rows")
+    # Both stages are placeholders until a source is agreed -- skip the query
+    # entirely rather than fetching data we have decided not to use.
+    nps = pd.DataFrame()
+    if funnel_cfg.get("cx_recommended", {}).get("enabled"):
+        nps = pd.DataFrame(
+            mb.query_file(os.path.join(SQL_DIR, "03_cx_recommended.sql"), db_id,
+                          key="install_id")
+        )
+    print(f"  cx recommended: {len(nps):,} rows"
+          f"{'' if funnel_cfg.get('cx_recommended', {}).get('enabled') else '  (placeholder, not queried)'}")
 
-    keys = funnel_cfg.get("idv", {}).get("task_keys", [])
+    keys = funnel_cfg.get("idv", {}).get("task_keys", [])         if funnel_cfg.get("idv", {}).get("enabled") else []
     idv = pd.DataFrame()
     if keys:
         quoted = ", ".join("'" + str(k).replace("'", "''") + "'" for k in keys)
@@ -79,7 +91,8 @@ def fetch_live(lookback_months: int, funnel_cfg: dict) -> tuple[pd.DataFrame, ..
             mb.query_file(os.path.join(SQL_DIR, "04_idv.sql"), db_id,
                           key="visit_id", idv_keys=quoted)
         )
-    print(f"  idv visits:    {len(idv):,} rows  (task keys: {', '.join(keys) or 'none'})")
+    print(f"  idv visits:     {len(idv):,} rows"
+          f"{'' if keys else '  (placeholder, not queried)'}")
     return installs, referrals, nps, idv
 
 
@@ -185,17 +198,20 @@ def main() -> int:
 
     as_of = date.today()
     sub_map = T.load_sub_channel_map(os.path.join(HERE, "sub_channel_map.json"))
-    base, ref_detail, unmapped = T.build_customer_base(installs, referrals, sub_map, as_of)
+    act_cfg = T.load_activation_config(funnel_cfg)
+    base, ref_detail, unmapped = T.build_customer_base(
+        installs, referrals, sub_map, as_of, act_cfg)
     base = T.attach_funnel(base, installs, nps, idv, funnel_cfg)
 
     summary = T.summarise(base, unmapped)
-    funnel = T.funnel_summary(base, funnel_cfg)
-    print(chr(10) + "Funnel:")
+    funnel = T.funnel_summary(base, funnel_cfg, act_cfg)
+    print(chr(10) + f"Activation window {act_cfg['start']:+d} to {act_cfg['end']:+d} days "
+          f"from installation (earlier referrals are blindspot):")
     for st in funnel["stages"]:
-        print(f"    {st['stage']:<22} {st['customers']:>8,}  {st['pct_of_base']:>6.1f}% of installed")
-    cov = funnel["survey_coverage"]
-    print(f"    -> {cov['answered_pct']}% answered the survey; "
-          f"{cov['recommended_of_answered']}% of those scored >= {funnel['config']['min_score']}")
+        if st["customers"] is None:
+            print(f"    {st['stage']:<32} {'placeholder':>12}")
+        else:
+            print(f"    {st['stage']:<32} {st['customers']:>12,}  {st['pct_of_base']:>6.1f}%")
     print(
         f"\n{summary['customers']:,} customers / {summary['installs']:,} installs -> "
         f"{summary['referrers']:,} referrers ({summary['activation_rate']}%)"
@@ -210,7 +226,7 @@ def main() -> int:
     columns = [c for c in columns if c in base.columns]
     shipped = base[columns].copy()
     for col in ("first_install_date", "first_referral_date",
-                "hoto_date", "commissioning_date"):
+                "hoto_date", "commissioning_date", "order_booked_date"):
         if col in shipped.columns:
             shipped[col] = pd.to_datetime(shipped[col], errors="coerce").dt.strftime("%Y-%m-%d")
 
@@ -221,6 +237,7 @@ def main() -> int:
         "summary": summary,
         "timing": T.timing_summary(base, ref_detail),
         "funnel": funnel,
+        "city_table": T.city_table(base, "city"),
         "trajectory": T.trajectory(base, ref_detail),
     })
     write_json(os.path.join(DATA_DIR, "meta.json"), {
@@ -232,6 +249,7 @@ def main() -> int:
         "sub_channels": T.SUB_CHANNELS,
         "timing_buckets": T.TIMING_BUCKETS,
         "funnel_config": funnel["config"],
+        "activation": {"start": act_cfg["start"], "end": act_cfg["end"]},
         "unmapped_source_count": len(unmapped),
     }, gzip_too=False)
 

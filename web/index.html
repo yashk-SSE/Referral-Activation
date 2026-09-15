@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Referral Cohorts</title>
-<link rel="stylesheet" href="styles.css?v=18bc7544">
+<link rel="stylesheet" href="styles.css?v=2f82735a">
 </head>
 <body>
 
@@ -48,6 +48,7 @@
         <option value="12">12+ months</option>
       </select>
     </div>
+    <button id="last3" class="btn-reset" type="button" title="Jun, Jul, Aug when sitting in September">Last 3 months</button>
     <button id="resetFilters" class="btn-reset" type="button">Reset</button>
   </section>
 
@@ -56,6 +57,7 @@
   <nav class="tabs" role="tablist">
     <button role="tab" class="tab active" data-tab="overview">Overview</button>
     <button role="tab" class="tab" data-tab="activation">Sub-Channel</button>
+    <button role="tab" class="tab" data-tab="sales">Sales tracker</button>
     <button role="tab" class="tab" data-tab="funnel">Funnel</button>
     <button role="tab" class="tab" data-tab="coverage">Coverage gap</button>
   </nav>
@@ -153,6 +155,40 @@
   </section>
 
   <!-- ---------------------------------------------------------------- -->
+  <section class="panel" data-panel="sales" hidden>
+    <div class="card wide">
+      <div class="card-head">
+        <h2>Activation by city</h2>
+        <p id="salesWindowNote"></p>
+        <p class="caveat">Referrals before the window start are treated as a
+           <strong>blindspot</strong> and excluded from every figure here.
+           <strong>Click any number to download that exact list of customers</strong>,
+           with the filters above applied.</p>
+      </div>
+      <div id="tblCity" class="table-wrap scroll"></div>
+      <p class="finding" id="salesFinding"></p>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Who activates, and when</h2>
+        <p>Sub-Channel of each customer&rsquo;s first in-window referral, by the window
+           it landed in.</p>
+      </div>
+      <div class="chart" id="chWindowMix"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Actual time from installation</h2>
+        <p>Days from installation to the first in-window referral. The windows above
+           are buckets; this is the underlying distribution.</p>
+      </div>
+      <div id="tblWindowTat" class="table-wrap"></div>
+    </div>
+  </section>
+
+  <!-- ---------------------------------------------------------------- -->
   <section class="panel" data-panel="funnel" hidden>
     <div class="card wide">
       <div class="card-head">
@@ -211,8 +247,9 @@
 
 <!-- vendored so the dashboard works behind corporate networks that block CDNs -->
 <script src="vendor/echarts.min.js?v=79a8b5a0"></script>
-<script src="js/data.js?v=dad7dcd5"></script>
-<script src="js/charts.js?v=2f805aa9"></script>
-<script src="js/app.js?v=5140ed18"></script>
+<script src="js/data.js?v=9a96b215"></script>
+<script src="js/charts.js?v=b3c4d20e"></script>
+<script src="js/export.js?v=55816084"></script>
+<script src="js/app.js?v=c1c12c7a"></script>
 </body>
 </html>

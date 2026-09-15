@@ -242,6 +242,94 @@ const AGG = {
       .filter(r => r.before || r.after);
   },
 
+  /** The Sales tracking table: one row per city, plus an India total.
+   *
+   * Activation is measured inside the configured window, not lifetime, so this
+   * table and the funnel agree. Cx Recommended and IDV return null while they
+   * are placeholders -- rendered as a dash, never as a zero.
+   */
+  cityTable(idx, dim) {
+    dim = dim || 'city';
+    const col = DS.cols[dim];
+    const act = DS.cols.referrer_activated, suc = DS.cols.successful_activated;
+    const lw = DS.cols.leads_in_window, ow = DS.cols.orders_in_window;
+    const rec = DS.cols.cx_recommended, idv = DS.cols.idv_done;
+    if (!act) return [];
+    const recLive = rec && rec.v.some(x => x !== null && x !== undefined);
+    const idvLive = idv && idv.v.some(x => x !== null && x !== undefined);
+
+    const blank = name => ({ name, rows: [], installed: 0, referrer_activated: 0,
+      successful_activated: 0, leads: 0, orders: 0, cx_recommended: recLive ? 0 : null,
+      idv: idvLive ? 0 : null });
+    const all = blank('India (all)');
+    const byKey = new Map();
+
+    for (const i of idx) {
+      const key = col && col.v[i] !== null && col.v[i] !== undefined
+        ? col.levels[col.v[i]] : '(unknown)';
+      let g = byKey.get(key);
+      if (!g) byKey.set(key, g = blank(key));
+      for (const t of [all, g]) {
+        t.installed++;
+        t.rows.push(i);
+        if (act.v[i]) t.referrer_activated++;
+        if (suc && suc.v[i]) t.successful_activated++;
+        t.leads += (lw && lw.v[i]) || 0;
+        t.orders += (ow && ow.v[i]) || 0;
+        if (recLive && rec.v[i]) t.cx_recommended++;
+        if (idvLive && idv.v[i]) t.idv++;
+      }
+    }
+    const finish = t => ({
+      ...t,
+      activation_rate: pct(t.referrer_activated, t.installed),
+      success_rate: pct(t.successful_activated, t.installed),
+      leads_per_referrer: t.referrer_activated
+        ? +(t.leads / t.referrer_activated).toFixed(2) : 0,
+      orders_per_referrer: t.referrer_activated
+        ? +(t.orders / t.referrer_activated).toFixed(2) : 0
+    });
+    return [finish(all)].concat(
+      [...byKey.values()].sort((a, b) => b.installed - a.installed).map(finish));
+  },
+
+  /** Who activates, and in which window after installation.
+   *
+   * Counted on the customer's first IN-WINDOW referral, so it reconciles with
+   * referrer_activated. Blindspot referrals take no part.
+   */
+  subChannelByWindow(idx) {
+    const wcol = DS.cols.first_timing_bucket, scol = DS.cols.activated_by_window;
+    const act = DS.cols.referrer_activated, dta = DS.cols.days_to_activation;
+    if (!wcol || !scol || !act) return { windows: [], series: {}, tat: [] };
+    const windows = (TIMING_BUCKETS || []).filter(
+      b => b.indexOf('blindspot') === -1 && b !== 'After window');
+    const series = {};
+    SOURCES.forEach(s => { series[s] = windows.map(() => 0); });
+    const tatBy = new Map();
+    for (const i of idx) {
+      if (!act.v[i]) continue;
+      const w = wcol.v[i] === null || wcol.v[i] === undefined ? null : wcol.levels[wcol.v[i]];
+      const sc = scol.v[i] === null || scol.v[i] === undefined ? null : scol.levels[scol.v[i]];
+      const wi = windows.indexOf(w);
+      if (sc && series[sc] && wi >= 0) series[sc][wi]++;
+      if (sc && dta && dta.v[i] !== null && dta.v[i] !== undefined) {
+        if (!tatBy.has(sc)) tatBy.set(sc, []);
+        tatBy.get(sc).push(dta.v[i]);
+      }
+    }
+    const q = (arr, p) => {
+      const a = arr.slice().sort((x, y) => x - y);
+      return a[Math.min(a.length - 1, Math.floor(p * (a.length - 1)))];
+    };
+    const tat = SOURCES.filter(s => tatBy.has(s)).map(s => ({
+      sub_channel: s, n: tatBy.get(s).length,
+      p50: q(tatBy.get(s), 0.5), p90: q(tatBy.get(s), 0.9),
+      mean: +(tatBy.get(s).reduce((a, b) => a + b, 0) / tatBy.get(s).length).toFixed(1)
+    }));
+    return { windows, series, tat };
+  },
+
   /** The Installed -> Recommended -> IDV -> Referrer funnel.
    *
    * Survey non-response is reported as its own stage. Without it the drop from

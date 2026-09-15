@@ -132,6 +132,19 @@ function buildFilters() {
     render();
   });
 
+  // The Sales view is run on the last three COMPLETE months -- the current
+  // month is still accumulating installations and would drag every rate down.
+  document.getElementById('last3').addEventListener('click', () => {
+    const complete = cohorts.filter(c => c < (DS.meta.as_of || '').slice(0, 7));
+    const pick = complete.slice(-3);
+    if (!pick.length) return;
+    F.cohortFrom = pick[0];
+    F.cohortTo = pick[pick.length - 1];
+    from.value = F.cohortFrom;
+    to.value = F.cohortTo;
+    render();
+  });
+
   document.getElementById('resetFilters').addEventListener('click', () => {
     F.cohortFrom = cohorts[0];
     F.cohortTo = cohorts[cohorts.length - 1];
@@ -243,6 +256,55 @@ const PANELS = {
     ], rows, { sortKey: 'n' });
   },
 
+  sales(idx, s) {
+    const cfg = DS.meta.activation || { start: -3, end: 90 };
+    document.getElementById('salesWindowNote').innerHTML =
+      'A customer counts as <strong>activated</strong> if they gave a referral between ' +
+      '<strong>' + cfg.start + '</strong> and <strong>+' + cfg.end + ' days</strong> of ' +
+      'their installation &mdash; the span covering installation, commissioning, subsidy ' +
+      'disbursal and the first zero bill.';
+
+    const rows = AGG.cityTable(idx, 'city');
+    const pctCol = (k, l) => ({ key: k, label: l, num: true, pct: true });
+    const numCol = (k, l, metric) => ({ key: k, label: l, num: true, metric: metric || k });
+    renderTable('tblCity', [
+      { key: 'name', label: 'City' },
+      numCol('installed', 'Installed base'),
+      numCol('cx_recommended', 'Cx Recommended'),
+      numCol('idv', 'IDV visits'),
+      numCol('referrer_activated', 'Referrer activated'),
+      pctCol('activation_rate', 'Act %'),
+      numCol('successful_activated', 'Successful activated'),
+      numCol('leads', '# Leads'),
+      numCol('orders', '# Orders'),
+      { key: 'leads_per_referrer', label: 'Leads / referrer', num: true, fmt: v => v.toFixed(2) },
+      { key: 'orders_per_referrer', label: 'Orders / referrer', num: true, fmt: v => v.toFixed(2) }
+    ], rows, { sortKey: 'installed', drilldown: true });
+
+    const missing = missingIdentityColumns();
+    const india = rows[0];
+    document.getElementById('salesFinding').innerHTML = india
+      ? '<strong>' + fmtInt(india.referrer_activated) + '</strong> of ' +
+        fmtInt(india.installed) + ' installed customers activated in-window (' +
+        fmtPct(india.activation_rate) + '), producing ' + fmtInt(india.leads) +
+        ' leads and ' + fmtInt(india.orders) + ' orders.' +
+        (missing.length
+          ? ' <em>Downloads exclude customer and staff identity &mdash; this build is in ' +
+            'public mode. Rebuild with <code>--mode gated</code> for the full sheet.</em>'
+          : '')
+      : '';
+
+    const mix = AGG.subChannelByWindow(idx);
+    chartWindowMix(mix);
+    renderTable('tblWindowTat', [
+      { key: 'sub_channel', label: 'Sub-Channel', fmt: dot },
+      { key: 'n', label: 'Activated', num: true, bar: true },
+      { key: 'p50', label: 'p50 days', num: true },
+      { key: 'p90', label: 'p90 days', num: true },
+      { key: 'mean', label: 'Mean days', num: true, fmt: v => v.toFixed(1) }
+    ], mix.tat, { sortKey: 'n' });
+  },
+
   funnel(idx, s) {
     const stages = AGG.funnelStages(idx);
     chartFunnel(stages);
@@ -264,6 +326,17 @@ const PANELS = {
           ' days after installation) went live in September 2026, so it is still near zero.'
         : '');
 
+    const npsRows = AGG.byNpsGroup(idx);
+    if (!npsRows.length) {
+      // Distinguish "no source yet" from "no rows matched" -- the generic
+      // empty-table message would read as the latter.
+      document.getElementById('tblNps').innerHTML =
+        '<p class="muted">Cx Recommended is a placeholder &mdash; no source is wired up ' +
+        'yet, so there is nothing to split on. This table fills in once ' +
+        '<code>cx_recommended.enabled</code> is turned on in ' +
+        '<code>etl/funnel_config.json</code>.</p>';
+      return;
+    }
     renderTable('tblNps', [
       { key: 'group', label: 'Survey answer' },
       { key: 'base', label: 'Customers', num: true, bar: true },
@@ -272,7 +345,7 @@ const PANELS = {
       { key: 'successful', label: 'Successful', num: true },
       { key: 'successRate', label: 'Success rate', num: true, pct: true },
       { key: 'perCustomer', label: 'Referrals each', num: true, fmt: v => v.toFixed(2) }
-    ], AGG.byNpsGroup(idx), { sortKey: 'base' });
+    ], npsRows, { sortKey: 'base' });
   },
 
   coverage(idx, s) {

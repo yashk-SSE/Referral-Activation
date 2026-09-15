@@ -232,3 +232,16 @@ table.data tbody tr:hover { background: var(--surface-2); }
   font-size: 13px; line-height: 1.55;
 }
 .finding strong { font-weight: 650; }
+
+
+/* ---- drill-down cells -------------------------------------------------- */
+table.data td.drill { cursor: pointer; position: relative; }
+table.data td.drill:hover {
+  background: var(--accent-soft); color: var(--accent); font-weight: 600;
+}
+table.data td.drill::after {
+  content: "93"; position: absolute; right: 3px; opacity: 0;
+  font-size: 10px; color: var(--accent);
+}
+table.data td.drill:hover::after { opacity: .7; }
+table.data td.drilled { background: var(--good); color: #fff; }

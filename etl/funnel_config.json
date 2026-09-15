@@ -1,33 +1,60 @@
 {
   "_comment": [
-    "Configurable inputs for the two funnel stages added 2026-09-15.",
+    "Funnel and activation-window configuration.",
     "",
-    "cx_recommended -- 'how likely are you to recommend SolarSquare' from",
-    "public.new_nps_response_live, joined on sse_id = project.sseid. The scale is",
-    "0-10, so min_score 9 is the standard NPS promoter definition. Set it to 7 to",
-    "count non-detractors instead.",
+    "ACTIVATION WINDOW",
+    "  A referral counts as an activation only if it lands between",
+    "  window_start_days and window_end_days of the customer's installation.",
+    "  Default -3 .. +90: wide enough to cover installation, commissioning,",
+    "  subsidy disbursal and the first zero bill, which are the high points for",
+    "  most customers.",
     "",
-    "  A customer who answered more than once is taken at their HIGHEST score:",
-    "  the question is whether they have ever expressed willingness to recommend.",
-    "  submitteddate is mixed-format free text ('21/02/25 13:42' and",
-    "  'Sep 9, 2024 9:12 AM' both occur), so 'latest response' is not reliably",
-    "  derivable and was not used.",
+    "  BLINDSPOT: referrals before window_start_days are excluded entirely.",
+    "  Deep pre-installation referrals carry noise (they predate the customer",
+    "  having a working system), so they are neither activations nor counted",
+    "  anywhere in the activation metrics. They remain visible in the lifetime",
+    "  is_referrer flag so the two can be compared.",
     "",
-    "idv -- Installation Day Visit, from public.usertasks. SC_IDV_01 is the task",
-    "literally named 'Installation Day Visit'; it went live in September 2026, so",
-    "volumes are near zero until it is adopted. Add more keys here to widen it.",
+    "SUB-WINDOWS",
+    "  Reporting buckets inside the activation window. The last one is bounded",
+    "  by commissioning: whichever of (window end, commissioning) comes first.",
     "",
-    "  days_before / days_after define the window around the installation date.",
-    "  days_after is the configurable upper limit."
+    "CX RECOMMENDED / IDV",
+    "  PLACEHOLDERS. enabled=false means the ETL does not query any source and",
+    "  the dashboard renders the column as a dash rather than a zero -- a zero",
+    "  would read as 'we did none', which is not what we know.",
+    "",
+    "  When the real source arrives, set enabled=true and fill in `source`.",
+    "  Previously explored (NOT wired up, kept only as a starting point):",
+    "    cx_recommended  public.new_nps_response_live, question",
+    "                    how_likely_are_you_to_recommend_solarsquare_to_a_friend_or_coll,",
+    "                    0-10, joined on sse_id = project.sseid",
+    "    idv             public.usertasks key SC_IDV_01 'Installation Day Visit',",
+    "                    live Sept 2026. NOTE public.user_slots_visits_visits is",
+    "                    dead -- nothing at all in 2026."
   ],
 
+  "activation": {
+    "window_start_days": -3,
+    "window_end_days": 90,
+    "sub_windows": [
+      { "label": "-3 to +3",  "start": -3, "end": 3 },
+      { "label": "+4 to +7",  "start": 4,  "end": 7 },
+      { "label": "+8 to commissioning", "start": 8, "end": null, "cap_at_commissioning": true }
+    ]
+  },
+
   "cx_recommended": {
+    "enabled": false,
+    "source": null,
     "min_score": 9,
     "scale_max": 10
   },
 
   "idv": {
-    "task_keys": ["SC_IDV_01"],
+    "enabled": false,
+    "source": null,
+    "task_keys": [],
     "days_before": 3,
     "days_after": 3
   }

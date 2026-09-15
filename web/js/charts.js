@@ -269,14 +269,33 @@ function renderTable(elId, columns, rows, opts) {
     else if (typeof v === 'number') inner = c.pct ? fmtPct(v) : fmtInt(v);
     else inner = String(v);
     if (c.signed && typeof v === 'number') cls += v > 0 ? ' pos' : (v < 0 ? ' neg' : '');
+    // Drill-down cells carry the metric so a click can rebuild the exact row
+    // set behind the number that was clicked.
+    const drill = opts.drilldown && c.metric && typeof v === 'number' && v > 0;
+    if (drill) cls += ' drill';
+    const attrs = drill ? ` data-metric="${c.metric}" data-row="${r.name}"` : '';
     if (c.bar) {
       const w = Math.round(100 * (r[c.key] || 0) / maxes[c.key]);
-      return `<td class="${cls} bar-cell"><i style="width:${w}%"></i><span>${inner}</span></td>`;
+      return `<td class="${cls} bar-cell"${attrs}><i style="width:${w}%"></i><span>${inner}</span></td>`;
     }
-    return `<td class="${cls}">${inner}</td>`;
+    return `<td class="${cls}"${attrs}>${inner}</td>`;
   }).join('') + '</tr>').join('');
 
   el.innerHTML = `<table class="data"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+
+  if (opts.drilldown) {
+    el.querySelectorAll('td.drill').forEach(td => td.addEventListener('click', () => {
+      const row = sorted.find(r => String(r.name) === td.dataset.row);
+      if (!row || !row.rows) return;
+      const picked = rowsForMetric(row.rows, td.dataset.metric);
+      const file = downloadCustomers(picked, [row.name, td.dataset.metric]);
+      if (file) {
+        td.classList.add('drilled');
+        setTimeout(() => td.classList.remove('drilled'), 900);
+      }
+    }));
+  }
+
   el.querySelectorAll('th').forEach(th => th.addEventListener('click', () => {
     const key = th.dataset.key;
     el._sort = { key, dir: state.key === key ? -state.dir : -1 };
@@ -359,5 +378,23 @@ function chartFunnel(rows) {
       label: { show: true, position: 'right', color: C.text, fontSize: 11,
                formatter: p => fmtInt(p.value) + '  (' + fmtPct(rows[p.dataIndex].pct) + ')' }
     }]
+  }));
+}
+
+
+/* ---------------------------------------------------------------------- */
+/* activation window mix                                                   */
+/* ---------------------------------------------------------------------- */
+function chartWindowMix(mix) {
+  mount('chWindowMix', Object.assign(BASE(), {
+    grid: { left: 44, right: 16, top: 30, bottom: 34, containLabel: true },
+    legend: { top: 0 },
+    xAxis: AXIS_X({ data: mix.windows, axisLabel: { color: C.text, fontSize: 10 } }),
+    yAxis: AXIS_Y({ name: 'customers activated', nameTextStyle: { color: C.text, fontSize: 10 } }),
+    series: SOURCES.filter(s => (mix.series[s] || []).some(v => v > 0)).map((s, i, arr) => ({
+      name: s, type: 'bar', stack: 'w', data: mix.series[s], barMaxWidth: 54,
+      itemStyle: { color: SOURCE_COLOR[s] || FALLBACK_COLOR,
+                   borderRadius: i === arr.length - 1 ? [3, 3, 0, 0] : 0 }
+    }))
   }));
 }

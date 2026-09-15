@@ -18,13 +18,19 @@
 -- numerics a regex guard. Timestamps are UTC, the business runs on IST, so
 -- every date is converted before being truncated to a day.
 
+-- installation_completed_by is the "Installation Champion" -- the same
+-- derivation Metabase card 1466 uses. DISTINCT ON takes the latest completion
+-- so the champion matches the installation date we report.
 WITH install_task AS (
-    SELECT
-        "parameters_projectId" AS project_id,
-        MAX(to_timestamp(NULLIF("timeCompleted", '-1.0')::numeric / 1000)) AS installation_at
+    SELECT DISTINCT ON ("parameters_projectId")
+        "parameters_projectId"                                        AS project_id,
+        to_timestamp(NULLIF("timeCompleted", '-1.0')::numeric / 1000)  AS installation_at,
+        "completedBy_userId"                                           AS installation_completed_by
     FROM usertasks
     WHERE KEY = '039A'
-    GROUP BY "parameters_projectId"
+      AND NULLIF("timeCompleted", '-1.0') IS NOT NULL
+    ORDER BY "parameters_projectId",
+             to_timestamp(NULLIF("timeCompleted", '-1.0')::numeric / 1000) DESC
 )
 SELECT
     p."sseid"                                        AS install_id,
@@ -43,10 +49,31 @@ SELECT
     CASE WHEN TRIM(p."project_size_kw") ~ '^[0-9]+(\.[0-9]+)?$'
          THEN TRIM(p."project_size_kw")::numeric END AS capacity_kw,
     CASE WHEN TRIM(p."total_price") ~ '^[0-9]+(\.[0-9]+)?$'
-         THEN TRIM(p."total_price")::numeric END     AS order_value
+         THEN TRIM(p."total_price")::numeric END     AS order_value,
+
+    -- Drill-down fields. The users joins are the ones card 1466 uses:
+    --   lead.assigned_sc            -> the Solar Consultant
+    --   039A completedBy_userId     -> the Installation Champion
+    NULLIF(TRIM(CONCAT_WS(' ', NULLIF(TRIM(p."customer_first_name"), ''),
+                               NULLIF(TRIM(p."customer_middle_name"), ''),
+                               NULLIF(TRIM(p."customer_last_name"), ''))), '')
+                                                     AS customer_name,
+    (CAST(l."order_closure_datetime" AS timestamp)
+        AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date
+                                                     AS order_booked_date,
+    NULLIF(TRIM(CONCAT_WS(' ', NULLIF(TRIM(sc_user."firstName"), ''),
+                               NULLIF(TRIM(sc_user."lastName"), ''))), '')
+                                                     AS sc_name,
+    NULLIF(TRIM(sc_user."emails"), '')               AS sc_email,
+    NULLIF(TRIM(CONCAT_WS(' ', NULLIF(TRIM(inst_user."firstName"), ''),
+                               NULLIF(TRIM(inst_user."lastName"), ''))), '')
+                                                     AS installation_champion,
+    NULLIF(TRIM(inst_user."emails"), '')             AS installation_champion_email
 FROM public.project p
 JOIN install_task it ON it.project_id = p."_id"
 LEFT JOIN public.lead l ON l."lead_id" = p."lead_id"   -- not every project resolves to a lead
+LEFT JOIN public.users sc_user   ON sc_user."_id"   = l."assigned_sc"
+LEFT JOIN public.users inst_user ON inst_user."_id" = it.installation_completed_by
 WHERE NULLIF(TRIM(p."prospectId"), '') IS NOT NULL
   AND (it.installation_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date
       BETWEEN (CURRENT_DATE - INTERVAL '{lookback_months} months') AND CURRENT_DATE

@@ -179,84 +179,129 @@ yet; they are mapped for when they do.
 
 ---
 
-## 5b. Funnel stages — Cx Recommended and IDV
+## 5b. Activation window, blindspot, and the funnel
 
-Added 2026-09-15. Both are configured in `etl/funnel_config.json`.
+Configured in `etl/funnel_config.json`.
 
-### Cx Recommended
+### The activation window
 
-`public.new_nps_response_live`, question
-`how_likely_are_you_to_recommend_solarsquare_to_a_friend_or_coll`, a 0–10
-scale, joined on `sse_id = project.sseid`.
+A referral counts as an **activation** only if it lands between
+`window_start_days` and `window_end_days` of the customer's installation.
+Default **−3 … +90 days** — wide enough to cover installation, commissioning,
+subsidy disbursal and the first zero bill, which are the high points for most
+customers.
+
+### The blindspot
+
+Referrals **earlier than the window start are excluded from every activation
+metric.** They predate the customer having a working system and carry too much
+noise to attribute. They stay visible in the lifetime `is_referrer` flag, so the
+two views can be compared, but they never reach the Sales tracker.
+
+This is a large exclusion and should be stated whenever these numbers are
+shared. Of the 21,758 lifetime referrers over 24 months, where the **first**
+referral lands:
+
+| | Referrers | Share |
+|---|---|---|
+| Before window (blindspot) | 7,671 | 35.3% |
+| −3 to +3 | 2,925 | 13.4% |
+| +4 to +7 | 802 | 3.7% |
+| +8 to commissioning | 1,763 | 8.1% |
+| After window (> +90 days) | 8,597 | 39.5% |
+
+**7,179 customers activate in-window** — more than the 5,490 whose *first*
+referral is in-window, because a customer whose first referral fell in the
+blindspot can still refer again inside the window, and that counts.
+
+### Sub-windows
+
+| Bucket | Rule |
+|---|---|
+| **−3 to +3** | the hypothesised peak activation window |
+| **+4 to +7** | |
+| **+8 to commissioning** | day 8 onward, capped at commissioning — whichever comes first |
+
+Past the last sub-window but still inside +90 falls to *After window*, which is
+what "or commissioning, whichever comes first" leaves behind.
+
+Actual TAT from installation is reported alongside the buckets (p50, p90, mean
+days), because the buckets are a reporting convenience and the distribution is
+the underlying truth.
+
+### Terms
 
 | Term | Definition |
 |---|---|
-| **Answered the survey** | the customer has at least one scored response |
-| **Cx Recommended** | their score ≥ `min_score` (default **9**, the standard NPS promoter cut) |
+| **Referrer activated** | ≥ 1 referral inside the window |
+| **Successful referrer activated** | ≥ 1 in-window referral that became an order |
+| **# Leads** | in-window referrals |
+| **# Orders** | in-window referrals that became orders |
+| **Leads / referrer** | # Leads ÷ Referrer activated |
+| **Orders / referrer** | # Orders ÷ Referrer activated |
 
-- A customer who answered more than once is taken at their **highest** score —
-  the question is whether they have ever expressed willingness to recommend.
-  `submitteddate` is mixed-format free text (`21/02/25 13:42` and
-  `Sep 9, 2024 9:12 AM` both occur), so "most recent response" is not reliably
-  derivable and was not used.
-- `sentiment` in that table is the sentiment of the free-text **reason**, not of
-  the score — score 10 appears with sentiment `Negative` 37 times. The score is
-  the field that answers the question.
-- `public.solarsquare_nps_response_live` is the older, smaller feed (2,191 rows,
-  nothing after 2023) and is not used.
+These differ from the lifetime `is_referrer` / `is_successful_referrer` in
+Section 4, which ignore the window. Both are shipped; the Sales tracker uses
+the windowed ones.
 
-### IDV — Installation Day Visit
+### Cx Recommended and IDV — placeholders
 
-`public.usertasks` where `key` is in `idv.task_keys` (default **`SC_IDV_01`**,
-the task described "Installation Day Visit"), completed within
-`days_before` … `days_after` of the customer's installation date
-(default **−3 … +3**; `days_after` is the configurable upper limit).
+Both are **structural placeholders**. `enabled: false` means the ETL queries no
+source and the dashboard renders a dash, **not a zero** — "we have no source"
+and "we did none" are different statements and a zero asserts the wrong one.
 
-- `timeCompleted` is epoch milliseconds as text; `-1.0` means not completed.
-- `usertasks` has no SSEID, so it joins on `project._id`.
-- The window is applied in `transform.py`, not in SQL, so changing the config
-  needs no SQL edit.
+When the source is agreed, set `enabled: true` and fill in `source`.
 
-**Visits are no longer in `public.user_slots_visits_visits`.** That table holds
-8,506 rows for 2023, 38,858 for 2024, 4,610 for 2025 and **nothing for 2026** —
-it is dead. `usertasks` is current (3.8M completions in 2026).
+Previously explored and deliberately **not** wired up, kept only as a starting
+point:
 
-### Read the funnel with its coverage
-
-Today, of the 24-month installed base:
-
-| Stage | Customers | % of installed |
+| Stage | Candidate | Note |
 |---|---|---|
-| Installed | 46,862 | 100.0% |
-| Answered the survey | 3,801 | 8.1% |
-| Cx Recommended (9–10) | 3,477 | 7.4% |
-| IDV done | 1 | 0.0% |
-| Referrer | 21,754 | 46.4% |
-| Successful referrer | 10,916 | 23.3% |
+| Cx Recommended | `public.new_nps_response_live`, question `how_likely_are_you_to_recommend_solarsquare_to_a_friend_or_coll`, 0–10, joined on `sse_id` | 8.1% of the base had answered; 91.5% of those scored 9–10 |
+| IDV | `public.usertasks` key `SC_IDV_01` "Installation Day Visit" | went live Sept 2026, 4 records |
 
-**The stages are not nested.** A customer can be a referrer without ever
-answering the survey — 19,400 of them are. The chart is a bar per stage, not a
-funnel shape, because a funnel would imply a containment that does not hold.
+If IDV is ever sourced from visits, note that **`public.user_slots_visits_visits`
+is dead** — 8,506 rows in 2023, 38,858 in 2024, 4,610 in 2025 and **nothing in
+2026**. `usertasks` is the current system.
 
-**The drop to 7.4% is reach, not reluctance.** 91.5% of customers who answer
-score 9–10. Survey non-response is therefore reported as its own stage.
+---
 
-**IDV is near zero because `SC_IDV_01` went live in September 2026** (4 records
-to date). The plumbing is built and will fill as the task is adopted.
+## 5c. The Sales tracker
 
-### Does recommending predict referring?
+One row per city plus an **India (all)** total, over whatever the filters
+select. Intended use is the last three complete months — sitting in September,
+that is the Jun / Jul / Aug installed base.
 
-| Survey answer | Customers | Referral rate | Success rate | Referrals each |
-|---|---|---|---|---|
-| Recommended (9–10) | 3,477 | 62.5% | 33.2% | 1.93 |
-| Passive (7–8) | 207 | 56.0% | 32.9% | 1.59 |
-| Detractor (0–6) | 117 | 56.4% | 29.9% | 1.30 |
-| Did not answer | 43,061 | 45.0% | 22.4% | 1.08 |
+Columns: Installed base, Cx Recommended *(placeholder)*, IDV visits
+*(placeholder)*, Referrer activated, Act %, Successful activated, # Leads,
+# Orders, Leads / referrer, Orders / referrer.
 
-Promoters refer at 62.5% against 45.0% for non-responders. But note detractors
-still refer at 56.4% — answering the survey at all is a stronger signal than
-what was answered, which is consistent with survey response being a proxy for
-engagement rather than a driver of referral.
+### Drill-down
+
+**Clicking any number downloads exactly those customers as CSV**, with the
+dashboard's filters applied. The file is built from rows already in the
+browser, so it always matches what was on screen.
+
+| Column | Source |
+|---|---|
+| SSEID | `project.sseid` |
+| Name | `project.customer_first/middle/last_name` |
+| Cluster / City / State | `project.site_address_cluster` / `_city` / `_state` |
+| Order Booked Date | `lead.order_closure_datetime` |
+| HOTO Date | `lead.cx_approval_timestamp` |
+| SC Name / Email | `lead.assigned_sc` → `users._id` |
+| Install Date | `usertasks` task-039A completion |
+| Installation Champion / Email | task-039A `completedBy_userId` → `users._id` |
+| Commissioning Date | `project.commissioning_date` |
+| Activation fields | Referrer/Successful activated, leads, orders, Sub-Channel, window, days from install |
+
+The two `users` joins are the ones Metabase card 1466 ("OMS Plants") uses.
+
+> **The drill-down needs `--mode gated`.** SSEID, customer name, SC and
+> Installation Champion are identifying, so `public` mode omits them entirely
+> and the export degrades to the non-identifying columns, saying so on screen.
+> **Do not deploy in gated mode until the URL is behind Cloudflare Access** —
+> see [DEPLOY.md](DEPLOY.md).
 
 ---
 
