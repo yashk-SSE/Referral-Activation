@@ -35,18 +35,24 @@ PUBLIC_COLUMNS = [
     "is_referrer", "is_successful_referrer", "activated_by",
     "nps_answered", "cx_recommended", "idv_done",
     "referrer_activated", "successful_activated", "leads_in_window",
-    "orders_in_window", "activated_by_window", "days_to_activation",
+    "orders_in_window", "activated_by_window", "activation_window",
+    "days_to_activation",
     "sub_channel_pre", "sub_channel_post", "sub_channel_detail",
     "first_timing_bucket", "first_tat_from_hoto",
     "referrals_total", "referrals_converted", "months_to_first_referral",
     "days_to_first_referral", "pre_install_referrer", "maturity_months",
+    # Deliberate exception to the "no identity in public" rule: the City Deep
+    # Dive tab filters and ranks Solar Consultants by name, which is the whole
+    # point of that view for the Sales team. The NAME only -- sc_email stays
+    # gated, so the public build carries no contactable identifier.
+    "sc_name",
 ]
 # Drill-down fields. These carry customer and employee identity, so they ship
 # only in gated mode -- see docs/DEPLOY.md before publishing with them on.
 GATED_EXTRA = ["customer_id", "first_referral_date",
                "hoto_date", "commissioning_date",
                "install_id", "customer_name", "order_booked_date",
-               "sc_name", "sc_email", "installation_champion",
+               "sc_email", "installation_champion",
                "installation_champion_email"]
 
 

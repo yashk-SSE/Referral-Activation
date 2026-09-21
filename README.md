@@ -29,9 +29,10 @@ Two design decisions worth knowing:
 anything it uses to call Metabase is visible in DevTools. So the key stays in
 GitHub Secrets, the Action queries Metabase, and only derived JSON is published.
 
-**Every cut is computed in the browser from one row set.** Filters reshape all
-three tabs at once and the cuts cannot drift apart, because they all derive from
-the same rows. At ~47k customers this is a few milliseconds of work.
+**Every cut is computed in the browser from one row set.** Filters reshape both
+tabs at once and the cuts cannot drift apart, because they all derive from the
+same rows — and from one `statsFor()` in `web/js/data.js`. At ~47k customers
+this is a few milliseconds of work.
 
 ---
 
@@ -141,14 +142,12 @@ Set with `--mode gated` locally, or the `mode` input on a manual workflow run.
 
 ---
 
-## The three tabs
+## The two tabs
 
 | tab | question it answers |
 |---|---|
-| **Referrer Activation** | The Sales-facing view: per-city activation inside the −3…+90 day window, with an India total. Click any number to download that list of customers |
-| **Overview** | How many installed customers become referrers, when their first referral lands relative to their own installation, and whether they refer again |
-| **Sub-Channel** | Sales / Online / CApp / BTL / Ops/AMC / Others — who activated them, each Sub-Channel's quality, the before-vs-after-installation split, and how fast the referral is captured after HOTO |
-| **Coverage gap** | The never-referred base by state and cluster, ranked by how many customers are still untapped |
+| **Referrer Activation** | The Sales-facing view: per-cluster activation inside the −3…+90 day window, with an India total, plus who activated them and how long it took. Click any number to download that list of customers |
+| **City Deep Dive** | One cluster at a time, every metric transposed into a month-on-month grid — metrics down the side, installation months across the top — including the Sub-Channel and sub-window splits. Filter to a single **Solar Consultant** to see their own book: installed base, what activated from it, and how they rank against the others in the cluster |
 
 Full definitions for every term are in
 **[docs/DEFINITIONS.md](docs/DEFINITIONS.md)**.

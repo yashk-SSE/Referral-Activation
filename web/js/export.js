@@ -26,12 +26,13 @@ const EXPORT_COLUMNS = [
   { key: 'installation_champion',       label: 'Installation Champion' },
   { key: 'installation_champion_email', label: 'Installation Champion Email' },
   { key: 'commissioning_date',          label: 'Commissioning Date' },
-  { key: 'referrer_activated',          label: 'Referrer Activated' },
-  { key: 'successful_activated',        label: 'Successful Activated' },
+  { key: 'referrer_activated',          label: 'Referrer Activation' },
+  { key: 'successful_activated',        label: 'Orders Activation' },
   { key: 'leads_in_window',             label: 'Leads In Window' },
   { key: 'orders_in_window',            label: 'Orders In Window' },
   { key: 'activated_by_window',         label: 'Sub-Channel' },
-  { key: 'first_timing_bucket',         label: 'Activation Window' },
+  { key: 'activation_window',           label: 'Activation Window' },
+  { key: 'first_timing_bucket',         label: 'First Referral Window' },
   { key: 'days_to_activation',          label: 'Days From Install To First Referral' },
   { key: 'capacity_kw',                 label: 'Capacity kW' }
 ];
@@ -94,8 +95,23 @@ function downloadCustomers(indices, labelParts) {
   return name;
 }
 
-/** Rows behind one cell of the city table. */
+/** Rows behind one cell of any metric table.
+ *
+ * "sub:Sales" and "win:-3 to +3" address the mix rows on the deep-dive matrix.
+ * Those have no column of their own -- they read one column, but only for
+ * customers who activated, so that the split sums back to the activated count.
+ */
 function rowsForMetric(rows, metric) {
+  const sep = String(metric || '').indexOf(':');
+  if (sep > 0) {
+    const kind = metric.slice(0, sep), value = metric.slice(sep + 1);
+    const act = DS.cols.referrer_activated;
+    const col = DS.cols[kind === 'sub' ? 'activated_by_window' : 'activation_window'];
+    if (!act || !col) return [];
+    const code = col.levels.indexOf(value);
+    if (code < 0) return [];
+    return rows.filter(i => act.v[i] && col.v[i] === code);
+  }
   const want = {
     installed: () => true,
     referrer_activated: i => DS.cols.referrer_activated.v[i],

@@ -56,17 +56,20 @@ COLUMNS = [
     ("installation_champion", "Installation Champion"),
     ("installation_champion_email", "Installation Champion Email"),
     ("commissioning_date", "Commissioning Date"),
-    ("referrer_activated", "Referrer Activated"),
-    ("successful_activated", "Orders Activated"),
+    ("referrer_activated", "Referrer Activation"),
+    ("successful_activated", "Orders Activation"),
     ("leads_in_window", "Leads In Window"),
     ("orders_in_window", "Orders In Window"),
     ("activated_by_window", "Sub-Channel"),
-    ("first_timing_bucket", "Activation Window"),
+    ("activation_window", "Activation Window"),
+    ("first_timing_bucket", "First Referral Window"),
     ("days_to_activation", "Days From Install To First Referral"),
     ("capacity_kw", "Capacity kW"),
 ]
 
-IDENTITY = ("install_id", "customer_name", "sc_name", "installation_champion")
+# sc_name now ships in the public build too (the dashboard ranks consultants by
+# name), so it no longer distinguishes a gated build. These four still do.
+IDENTITY = ("install_id", "customer_name", "sc_email", "installation_champion")
 
 
 def decode(payload: dict, key: str, i: int):
@@ -177,7 +180,10 @@ def main() -> int:
     ws.update(values=stamp + [header] + rows, range_name="A1",
               value_input_option="RAW")
     ws.freeze(rows=2)
-    ws.format("A2:U2", {"textFormat": {"bold": True}})
+    # Derived from COLUMNS: a hardcoded last column silently stops bolding the
+    # header the moment a field is added.
+    last = chr(ord("A") + len(COLUMNS) - 1) if len(COLUMNS) <= 26 else "AZ"
+    ws.format(f"A2:{last}2", {"textFormat": {"bold": True}})
 
     print(f"Wrote {len(rows):,} rows to '{args.worksheet}' in {sh.title}")
     print(f"  https://docs.google.com/spreadsheets/d/{sheet_id}")

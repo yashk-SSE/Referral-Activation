@@ -59,182 +59,15 @@ const AXIS_Y = extra => Object.assign({
 const fmtInt = n => (n === null || n === undefined) ? '—' : Math.round(n).toLocaleString();
 const fmtPct = n => (n === null || n === undefined) ? '—' : `${(+n).toFixed(1)}%`;
 
-
-
-/* ---------------------------------------------------------------------- */
-/* overview                                                                */
-/* ---------------------------------------------------------------------- */
-function chartCohort(rows) {
-  mount('chCohort', Object.assign(BASE(), {
-    grid: { left: 40, right: 46, top: 30, bottom: 46, containLabel: true },
-    legend: { top: 0, data: ['Customers', 'Referred'] },
-    tooltip: {
-      trigger: 'axis', backgroundColor: C.tooltipBg, borderColor: C.tooltipBorder, borderWidth: 1,
-      textStyle: { color: C.textStrong, fontSize: 12 },
-      formatter: p => {
-        const r = rows[p[0].dataIndex];
-        return `<b>${r.cohort}</b><br/>${fmtInt(r.referrers)} of ${fmtInt(r.base)} referred` +
-               `<br/><span style="color:${C.text}">${fmtPct(r.rate)} activation</span>`;
-      }
-    },
-    xAxis: AXIS_X({ data: rows.map(r => r.cohort), axisLabel: { color: C.text, fontSize: 10, rotate: 55 } }),
-    yAxis: [AXIS_Y(), AXIS_Y({ max: 100, axisLabel: { formatter: '{value}%', color: C.text, fontSize: 10 }, splitLine: { show: false } })],
-    series: [
-      { name: 'Customers', type: 'bar', stack: 'x', barMaxWidth: 24,
-        data: rows.map(r => r.base - r.referrers), itemStyle: { color: C.muted } },
-      { name: 'Referred', type: 'bar', stack: 'x', barMaxWidth: 24,
-        data: rows.map(r => r.referrers), itemStyle: { color: C.accent, borderRadius: [3, 3, 0, 0] } },
-      { name: 'Activation %', type: 'line', yAxisIndex: 1, smooth: true, symbol: 'none',
-        data: rows.map(r => r.rate), lineStyle: { width: 2, color: C.good } }
-    ]
-  }));
+/* Cluster names, consultant names and Sub-Channel labels all come from the
+ * warehouse and all end up inside markup we build by hand -- as text, and as
+ * data- attributes a click handler reads back. Escape both. */
+function escHtml(v) {
+  return String(v === null || v === undefined ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
-
-/* ---------------------------------------------------------------------- */
-/* activation source                                                       */
-/* ---------------------------------------------------------------------- */
-function chartSource(rows) {
-  const d = rows.slice().sort((a, b) => a.referrers - b.referrers);
-  mount('chSource', Object.assign(BASE(), {
-    grid: { left: 8, right: 70, top: 14, bottom: 22, containLabel: true },
-    legend: { show: false },
-    tooltip: {
-      trigger: 'axis', backgroundColor: C.tooltipBg, borderColor: C.tooltipBorder, borderWidth: 1,
-      textStyle: { color: C.textStrong, fontSize: 12 },
-      formatter: p => {
-        const r = d[p[0].dataIndex];
-        return `<b>${r.source}</b><br/>${fmtInt(r.referrers)} referrers (${fmtPct(r.share)})` +
-               `<br/><span style="color:${C.text}">${fmtInt(r.referrals)} referrals</span>`;
-      }
-    },
-    xAxis: AXIS_Y({ axisLabel: { show: false }, splitLine: { show: false } }),
-    yAxis: AXIS_X({ data: d.map(r => r.source), axisLabel: { color: C.text, fontSize: 11 } }),
-    series: [{
-      type: 'bar', data: d.map(r => r.referrers), barMaxWidth: 22,
-      itemStyle: { color: p => SOURCE_COLOR[d[p.dataIndex].source] || FALLBACK_COLOR, borderRadius: [0, 3, 3, 0] },
-      label: { show: true, position: 'right', color: C.text, fontSize: 10,
-               formatter: p => `${fmtInt(p.value)}  (${fmtPct(d[p.dataIndex].share)})` }
-    }]
-  }));
-}
-
-
-function chartSourceShare(mix) {
-  const totals = mix.cohorts.map((_, i) =>
-    SOURCES.reduce((sum, s) => sum + mix.series[s][i], 0));
-  mount('chSourceShare', Object.assign(BASE(), {
-    grid: { left: 40, right: 14, top: 30, bottom: 46, containLabel: true },
-    tooltip: {
-      trigger: 'axis', backgroundColor: C.tooltipBg, borderColor: C.tooltipBorder, borderWidth: 1,
-      textStyle: { color: C.textStrong, fontSize: 12 },
-      valueFormatter: v => fmtPct(v)
-    },
-    xAxis: AXIS_X({ data: mix.cohorts, axisLabel: { color: C.text, fontSize: 10, rotate: 55 } }),
-    yAxis: AXIS_Y({ max: 100, axisLabel: { formatter: '{value}%', color: C.text, fontSize: 10 } }),
-    series: SOURCES.map(s => ({
-      name: s, type: 'line', stack: 'share', smooth: true, symbol: 'none',
-      areaStyle: { color: SOURCE_COLOR[s], opacity: .85 },
-      lineStyle: { width: 0 },
-      emphasis: { focus: 'series' },
-      data: mix.series[s].map((v, i) => totals[i] ? +(100 * v / totals[i]).toFixed(2) : 0)
-    }))
-  }));
-}
-
-/* ---------------------------------------------------------------------- */
-/* timing                                                                  */
-/* ---------------------------------------------------------------------- */
-function chartTimingBuckets(rows) {
-  // Short axis labels; the full bucket name is in the tooltip.
-  const SHORT = ['Before install', 'Install +0-3d', 'Install +4-7d',
-                 'Install +8d to comm.', 'After comm.'];
-mount('chTiming', Object.assign(BASE(), {
-    grid: { left: 44, right: 16, top: 20, bottom: 46, containLabel: true },
-    legend: { show: false },
-    tooltip: {
-      trigger: 'axis', backgroundColor: C.tooltipBg, borderColor: C.tooltipBorder, borderWidth: 1,
-      textStyle: { color: C.textStrong, fontSize: 12 },
-      formatter: p => {
-        const r = rows[p[0].dataIndex];
-        return `<b>${r.bucket}</b><br/>${fmtInt(r.customers)} referrers` +
-               `<br/><span style="color:${C.text}">${fmtPct(r.pct)} of all referrers</span>`;
-      }
-    },
-    xAxis: AXIS_X({ data: rows.map((r, i) => SHORT[i] || r.bucket),
-                    axisLabel: { color: C.text, fontSize: 10, lineHeight: 13 } }),
-    yAxis: AXIS_Y(),
-    series: [{
-      type: 'bar', data: rows.map(r => r.customers), barMaxWidth: 60,
-      itemStyle: { color: p => TIMING_COLOR[rows[p.dataIndex].bucket] || C.accent,
-                   borderRadius: [4, 4, 0, 0] },
-      label: { show: true, position: 'top', color: C.text, fontSize: 11,
-               formatter: p => fmtPct(rows[p.dataIndex].pct) }
-    }]
-  }));
-}
-
-/* Where a customer's first referral came from on each side of installation.
- * A customer who referred both before and after appears in both series. */
-function chartBeforeAfter(rows) {
-  mount('chBeforeAfter', Object.assign(BASE(), {
-    grid: { left: 60, right: 20, top: 30, bottom: 34, containLabel: true },
-    legend: { top: 0, data: ['Before installation', 'After installation'] },
-    tooltip: { trigger: 'axis', backgroundColor: C.tooltipBg, borderColor: C.tooltipBorder,
-               borderWidth: 1, textStyle: { color: C.textStrong, fontSize: 12 } },
-    xAxis: AXIS_Y(),
-    yAxis: AXIS_X({ data: rows.map(r => r.sub_channel), axisLabel: { color: C.text, fontSize: 11 } }),
-    series: [
-      { name: 'Before installation', type: 'bar', data: rows.map(r => r.before),
-        barMaxWidth: 13, itemStyle: { color: '#e0862c', borderRadius: [0, 3, 3, 0] } },
-      { name: 'After installation', type: 'bar', data: rows.map(r => r.after),
-        barMaxWidth: 13, itemStyle: { color: '#17a2a2', borderRadius: [0, 3, 3, 0] } }
-    ]
-  }));
-}
-
-
-
-/* ---------------------------------------------------------------------- */
-/* trajectory                                                              */
-/* ---------------------------------------------------------------------- */
-function chartDepth(rows) {
-  mount('chDepth', Object.assign(BASE(), {
-    legend: { show: false },
-    tooltip: {
-      trigger: 'axis', backgroundColor: C.tooltipBg, borderColor: C.tooltipBorder, borderWidth: 1,
-      textStyle: { color: C.textStrong, fontSize: 12 },
-      formatter: p => {
-        const r = rows[p[0].dataIndex];
-        return `<b>${fmtInt(r.count)}</b> gave ${r.n}+ referrals<br/><span style="color:${C.text}">${fmtPct(r.pct)} of all referrers</span>`;
-      }
-    },
-    xAxis: AXIS_X({ data: rows.map(r => `${r.n}+`) }),
-    yAxis: AXIS_Y(),
-    series: [{
-      type: 'bar', data: rows.map(r => r.count), barMaxWidth: 34,
-      itemStyle: { color: C.accent, borderRadius: [3, 3, 0, 0] },
-      label: { show: true, position: 'top', color: C.text, fontSize: 10, formatter: p => fmtPct(rows[p.dataIndex].pct) }
-    }]
-  }));
-}
-
-
-
-/* ---------------------------------------------------------------------- */
-/* coverage gap                                                            */
-/* ---------------------------------------------------------------------- */
-function chartGap(rows) {
-  mount('chGap', Object.assign(BASE(), {
-    grid: { left: 44, right: 16, top: 30, bottom: 50, containLabel: true },
-    legend: { top: 0 },
-    xAxis: AXIS_X({ data: rows.map(r => r.cohort), axisLabel: { color: C.text, fontSize: 10, rotate: 55 } }),
-    yAxis: AXIS_Y({ name: 'customers', nameTextStyle: { color: C.text, fontSize: 10 } }),
-    series: [
-      { name: 'Referrers', type: 'bar', stack: 'g', data: rows.map(r => r.referrers), itemStyle: { color: C.accent } },
-      { name: 'Never referred (mature)', type: 'bar', stack: 'g', data: rows.map(r => r.mature), itemStyle: { color: '#d4506b' } },
-      { name: 'Never referred (too new to judge)', type: 'bar', stack: 'g', data: rows.map(r => r.young), itemStyle: { color: C.muted, borderRadius: [3, 3, 0, 0] } }
-    ]
-  }));
+function escAttr(v) {
+  return escHtml(v).replace(/"/g, '&quot;');
 }
 
 /* ---------------------------------------------------------------------- */
@@ -261,7 +94,11 @@ function renderTable(elId, columns, rows, opts) {
   ).join('');
 
   const body = sorted.map(r => {
-    const rowCls = opts.totalRow && String(r.name) === opts.totalRow ? ' class="total-row"' : '';
+    const name = String(r.name);
+    const cls = [];
+    if (opts.totalRow && name === opts.totalRow) cls.push('total-row');
+    if (opts.highlight && name === opts.highlight) cls.push('picked-row');
+    const rowCls = cls.length ? ' class="' + cls.join(' ') + '"' : '';
     return '<tr' + rowCls + '>' + columns.map(c => {
     let v = r[c.key];
     let cls = c.num ? 'num' : '';
@@ -275,7 +112,7 @@ function renderTable(elId, columns, rows, opts) {
     // set behind the number that was clicked.
     const drill = opts.drilldown && c.metric && typeof v === 'number' && v > 0;
     if (drill) cls += ' drill';
-    const attrs = drill ? ` data-metric="${c.metric}" data-row="${r.name}"` : '';
+    const attrs = drill ? ` data-metric="${escAttr(c.metric)}" data-row="${escAttr(name)}"` : '';
     if (c.bar) {
       const w = Math.round(100 * (r[c.key] || 0) / maxes[c.key]);
       return `<td class="${cls} bar-cell"${attrs}><i style="width:${w}%"></i><span>${inner}</span></td>`;
@@ -306,85 +143,6 @@ function renderTable(elId, columns, rows, opts) {
 }
 
 /* ---------------------------------------------------------------------- */
-/* inside Others                                                           */
-/* ---------------------------------------------------------------------- */
-const OTHERS_COLOR = {
-  'Campaign-driven': '#17a2a2',
-  'Unprompted': '#0891b2',
-  'Customer app / in-app': '#8b5cf6',
-  'SolarPro Partner (SPP)': '#8b5cf6',
-  'Employee-led, role not captured': '#e0862c',
-  'SSE employee': '#6366f1',
-  'HO Team & Others': '#94a3b8',
-  'Inbound cc team': '#64748b',
-  'Assure customer': '#0891b2',
-  'Unattributed (no role, no source)': '#b4bcc6'
-};
-
-function chartDetail(rows) {
-  const d = rows.slice().sort((a, b) => a.referrers - b.referrers);
-  mount('chDetail', Object.assign(BASE(), {
-    grid: { left: 8, right: 74, top: 12, bottom: 20, containLabel: true },
-    legend: { show: false },
-    tooltip: {
-      trigger: 'axis', backgroundColor: C.tooltipBg, borderColor: C.tooltipBorder,
-      borderWidth: 1, textStyle: { color: C.textStrong, fontSize: 12 },
-      formatter: p => {
-        const r = d[p[0].dataIndex];
-        return '<b>' + r.detail + '</b><br/>' + fmtInt(r.referrers) +
-               ' referrers (' + fmtPct(r.share) + ' of Others)<br/>' +
-               '<span style="color:' + C.text + '">' + fmtInt(r.successful) +
-               ' successful \u00b7 ' + fmtInt(r.referrals) + ' referrals</span>';
-      }
-    },
-    xAxis: AXIS_Y({ axisLabel: { show: false }, splitLine: { show: false } }),
-    yAxis: AXIS_X({ data: d.map(r => r.detail), axisLabel: { color: C.text, fontSize: 11 } }),
-    series: [{
-      type: 'bar', data: d.map(r => r.referrers), barMaxWidth: 20,
-      itemStyle: { color: p => OTHERS_COLOR[d[p.dataIndex].detail] || '#94a3b8',
-                   borderRadius: [0, 3, 3, 0] },
-      label: { show: true, position: 'right', color: C.text, fontSize: 10,
-               formatter: p => fmtInt(p.value) + '  (' + fmtPct(d[p.dataIndex].share) + ')' }
-    }]
-  }));
-}
-
-
-/* ---------------------------------------------------------------------- */
-/* funnel                                                                  */
-/* ---------------------------------------------------------------------- */
-function chartFunnel(rows) {
-  // A horizontal bar rather than an ECharts funnel: the stages are not strictly
-  // nested (a customer can be a referrer without answering the survey), and a
-  // funnel shape would imply a containment that does not hold.
-  mount('chFunnel', Object.assign(BASE(), {
-    grid: { left: 10, right: 92, top: 10, bottom: 24, containLabel: true },
-    legend: { show: false },
-    tooltip: {
-      trigger: 'axis', backgroundColor: C.tooltipBg, borderColor: C.tooltipBorder,
-      borderWidth: 1, textStyle: { color: C.textStrong, fontSize: 12 },
-      formatter: p => {
-        const r = rows[p[0].dataIndex];
-        return '<b>' + r.stage + '</b><br/>' + fmtInt(r.customers) + ' customers<br/>' +
-               '<span style="color:' + C.text + '">' + fmtPct(r.pct) + ' of installed</span>';
-      }
-    },
-    xAxis: AXIS_Y({ axisLabel: { show: false }, splitLine: { show: false } }),
-    yAxis: AXIS_X({ data: rows.map(r => r.stage), axisLabel: { color: C.text, fontSize: 11 } }),
-    series: [{
-      type: 'bar', data: rows.map(r => r.customers), barMaxWidth: 26,
-      itemStyle: {
-        color: p => (rows[p.dataIndex].coverage ? '#b4bcc6' : C.accent),
-        borderRadius: [0, 3, 3, 0]
-      },
-      label: { show: true, position: 'right', color: C.text, fontSize: 11,
-               formatter: p => fmtInt(p.value) + '  (' + fmtPct(rows[p.dataIndex].pct) + ')' }
-    }]
-  }));
-}
-
-
-/* ---------------------------------------------------------------------- */
 /* activation window mix                                                   */
 /* ---------------------------------------------------------------------- */
 function chartWindowMix(mix) {
@@ -399,4 +157,69 @@ function chartWindowMix(mix) {
                    borderRadius: i === arr.length - 1 ? [3, 3, 0, 0] : 0 }
     }))
   }));
+}
+
+/* ---------------------------------------------------------------------- */
+/* transposed matrix: metrics down the side, months across the top          */
+/* ---------------------------------------------------------------------- */
+/* Not renderTable's shape, and deliberately not sortable. The rows are a
+ * sequence that reads top to bottom -- base, then activation, then what the
+ * activation produced, then how it split -- and the columns are chronological.
+ * Sorting either axis would destroy the only thing the table is for.
+ *
+ * `metrics` entries are either { section } for a divider or
+ * { label, get(stats), fmt?, metric?, sub?, strong?, rate? }.
+ * `columns` entries are { key, label, stats, total? }.
+ */
+function renderMatrix(elId, metrics, columns, opts) {
+  const el = document.getElementById(elId);
+  if (!el) { console.warn('renderMatrix: no element #' + elId); return; }
+  opts = opts || {};
+  if (!columns.length) { el.innerHTML = '<p class="muted">Nothing in range.</p>'; return; }
+
+  const head = '<tr><th class="m-name">Metric</th>' + columns.map(c =>
+    `<th class="num${c.total ? ' m-total' : ''}">${escHtml(c.label)}</th>`).join('') + '</tr>';
+
+  const body = metrics.map(m => {
+    if (m.section) {
+      // The label lives in the sticky first cell, not in a colspan across the
+      // whole row -- a colspan'd cell scrolls its text off to the left as soon
+      // as the table is wider than the screen, which is most of the time.
+      return `<tr class="m-section"><th class="m-name">${escHtml(m.section)}</th>` +
+             `<td colspan="${columns.length}"></td></tr>`;
+    }
+    const cells = columns.map(c => {
+      const v = m.get(c.stats);
+      const text = (v === null || v === undefined) ? '—' : (m.fmt ? m.fmt(v) : fmtInt(v));
+      let cls = 'num';
+      if (c.total) cls += ' m-total';
+      if (m.rate) cls += ' m-rate';
+      // Percentages and per-referrer ratios are derived, not a set of rows, so
+      // there is nothing honest to hand back as a CSV.
+      const drill = opts.drilldown && m.metric && typeof v === 'number' && v > 0;
+      if (drill) cls += ' drill';
+      const attrs = drill
+        ? ` data-metric="${escAttr(m.metric)}" data-col="${escAttr(c.key)}"` : '';
+      return `<td class="${cls}"${attrs}>${text}</td>`;
+    }).join('');
+    const rowCls = m.strong ? ' class="m-strong"' : '';
+    // m.label may carry a Sub-Channel colour dot, so it is trusted markup that
+    // the caller built -- everything caller-side goes through escHtml first.
+    return `<tr${rowCls}><th class="m-name${m.sub ? ' m-sub' : ''}">${m.label}</th>${cells}</tr>`;
+  }).join('');
+
+  el.innerHTML = `<table class="data matrix"><thead>${head}</thead><tbody>${body}</tbody></table>`;
+
+  if (opts.drilldown) {
+    el.querySelectorAll('td.drill').forEach(td => td.addEventListener('click', () => {
+      const col = columns.find(c => String(c.key) === td.dataset.col);
+      if (!col || !col.stats || !col.stats.rows) return;
+      const picked = rowsForMetric(col.stats.rows, td.dataset.metric);
+      const file = downloadCustomers(picked, [opts.label, col.label, td.dataset.metric]);
+      if (file) {
+        td.classList.add('drilled');
+        setTimeout(() => td.classList.remove('drilled'), 900);
+      }
+    }));
+  }
 }

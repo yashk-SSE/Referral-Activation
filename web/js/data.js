@@ -116,18 +116,90 @@ function median(values) {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 const pct = (a, b) => (b ? +(100 * a / b).toFixed(2) : 0);
-
-/** Group row indices by a categorical column. */
-function groupBy(idx, col) {
-  const map = new Map();
+/** Group row indices by a categorical column, keeping the missing ones. */
+function groupRows(idx, col, fallback) {
   const c = DS.cols[col];
+  const map = new Map();
   for (const i of idx) {
-    const key = c.levels[c.v[i]] ?? '(none)';
+    const v = c ? c.v[i] : null;
+    const key = (v === null || v === undefined) ? (fallback || '(unknown)') : c.levels[v];
     let bucket = map.get(key);
     if (!bucket) map.set(key, bucket = []);
     bucket.push(i);
   }
   return map;
+}
+
+/** '2026-06' -> 'Jun 26'. Short enough that 24 of them fit across a table. */
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function monthLabel(key) {
+  const m = /^(\d{4})-(\d{2})$/.exec(key || '');
+  return m ? MONTH_ABBR[+m[2] - 1] + ' ' + m[1].slice(2) : String(key || '');
+}
+
+/* Cx Recommended and IDV are still placeholders. Asking "does this column hold
+ * any value at all" scans the whole column, and statsFor runs once per month
+ * per consultant -- so memoise it rather than rescanning 47k rows each time. */
+let LIVE = null;
+function liveFlags() {
+  if (LIVE) return LIVE;
+  const any = c => !!(c && c.v.some(x => x !== null && x !== undefined));
+  return (LIVE = { rec: any(DS.cols.cx_recommended), idv: any(DS.cols.idv_done) });
+}
+
+/** Every activation metric, over one set of row indices.
+ *
+ * The cluster table, the month-on-month matrix and the Solar Consultant table
+ * all come through here, so they cannot drift apart -- they are the same
+ * arithmetic cut three ways. `rows` is kept on the result so a click can
+ * rebuild the exact customer list behind any number.
+ */
+function statsFor(rows, name) {
+  const live = liveFlags();
+  const act = DS.cols.referrer_activated, suc = DS.cols.successful_activated;
+  const lw = DS.cols.leads_in_window, ow = DS.cols.orders_in_window;
+  const rec = DS.cols.cx_recommended, idv = DS.cols.idv_done;
+  const scol = DS.cols.activated_by_window, wcol = DS.cols.activation_window;
+
+  const t = {
+    name, rows,
+    installed: rows.length,
+    // A placeholder must render as a dash, never as a zero -- "nobody
+    // recommended us" and "we are not measuring it yet" are different claims.
+    cx_recommended: live.rec ? 0 : null,
+    idv: live.idv ? 0 : null,
+    referrer_activated: 0, successful_activated: 0, leads: 0, orders: 0,
+    bySubChannel: {}, byWindow: {}
+  };
+  if (act) {
+    for (const i of rows) {
+      if (act.v[i]) {
+        t.referrer_activated++;
+        // Sub-Channel and window are read only for activated customers, so
+        // these tallies always sum back to referrer_activated.
+        const s = scol && scol.v[i] !== null && scol.v[i] !== undefined
+          ? scol.levels[scol.v[i]] : null;
+        if (s) t.bySubChannel[s] = (t.bySubChannel[s] || 0) + 1;
+        const w = wcol && wcol.v[i] !== null && wcol.v[i] !== undefined
+          ? wcol.levels[wcol.v[i]] : null;
+        if (w) t.byWindow[w] = (t.byWindow[w] || 0) + 1;
+      }
+      if (suc && suc.v[i]) t.successful_activated++;
+      t.leads += (lw && lw.v[i]) || 0;
+      t.orders += (ow && ow.v[i]) || 0;
+      if (live.rec && rec.v[i]) t.cx_recommended++;
+      if (live.idv && idv.v[i]) t.idv++;
+    }
+  }
+  t.not_referred = t.installed - t.referrer_activated;
+  t.activation_rate = pct(t.referrer_activated, t.installed);
+  t.success_rate = pct(t.successful_activated, t.installed);
+  t.leads_per_referrer = t.referrer_activated
+    ? +(t.leads / t.referrer_activated).toFixed(2) : 0;
+  t.orders_per_referrer = t.referrer_activated
+    ? +(t.orders / t.referrer_activated).toFixed(2) : 0;
+  return t;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -165,86 +237,6 @@ const AGG = {
     };
   },
 
-  /** Where each referrer's FIRST referral landed, relative to their install.
-   *
-   * Commissioning truncates the post-install windows: once commissioned the
-   * customer is a live user, not someone mid-installation. Assigned in the ETL
-   * so the rule lives in one place.
-   */
-  timingBuckets(idx) {
-    const col = DS.cols.first_timing_bucket;
-    if (!col) return [];
-    const counts = new Map(TIMING_BUCKETS.map(b => [b, 0]));
-    let total = 0;
-    for (const i of idx) {
-      const v = col.v[i];
-      if (v === null || v === undefined) continue;
-      const name = col.levels[v];
-      if (!counts.has(name)) counts.set(name, 0);
-      counts.set(name, counts.get(name) + 1);
-      total++;
-    }
-    return TIMING_BUCKETS.map(b => ({
-      bucket: b, customers: counts.get(b) || 0, pct: pct(counts.get(b) || 0, total)
-    }));
-  },
-
-  /** p50 / p90 days from HOTO to first referral, for pre-installation referrers.
-   *
-   * Measured from HOTO rather than from installation because that is when the
-   * customer relationship starts -- the question is how quickly after handover
-   * the referral is captured.
-   */
-  preInstallTAT(idx) {
-    const tatCol = DS.cols.first_tat_from_hoto, sc = DS.cols.activated_by;
-    if (!tatCol) return { overall: null, bySubChannel: [] };
-    const all = [], byCh = new Map();
-    for (const i of idx) {
-      const v = tatCol.v[i];
-      if (v === null || v === undefined) continue;
-      all.push(v);
-      const name = sc && sc.v[i] !== null && sc.v[i] !== undefined ? sc.levels[sc.v[i]] : 'Others';
-      if (!byCh.has(name)) byCh.set(name, []);
-      byCh.get(name).push(v);
-    }
-    const q = (arr, p) => {
-      if (!arr.length) return null;
-      const s = arr.slice().sort((a, b) => a - b);
-      return s[Math.min(s.length - 1, Math.floor(p * (s.length - 1)))];
-    };
-    return {
-      overall: all.length ? { n: all.length, p50: q(all, 0.5), p90: q(all, 0.9) } : null,
-      bySubChannel: SOURCES
-        .filter(s => byCh.has(s))
-        .map(s => ({ sub_channel: s, n: byCh.get(s).length,
-                     p50: q(byCh.get(s), 0.5), p90: q(byCh.get(s), 0.9) }))
-    };
-  },
-
-  /** Sub-Channel of a customer's first referral BEFORE vs AFTER installation.
-   *
-   * A customer who referred on both sides of their installation is counted in
-   * both columns, so these do not sum to the referrer count.
-   */
-  subChannelBeforeAfter(idx) {
-    const pre = DS.cols.sub_channel_pre, post = DS.cols.sub_channel_post;
-    const tally = (col) => {
-      const m = new Map();
-      if (!col) return m;
-      for (const i of idx) {
-        const v = col.v[i];
-        if (v === null || v === undefined) continue;
-        const name = col.levels[v];
-        m.set(name, (m.get(name) || 0) + 1);
-      }
-      return m;
-    };
-    const b = tally(pre), a = tally(post);
-    return SOURCES
-      .map(s => ({ sub_channel: s, before: b.get(s) || 0, after: a.get(s) || 0 }))
-      .filter(r => r.before || r.after);
-  },
-
   /** Headline activation numbers, all measured inside the window. */
   activationSummary(idx) {
     const act = DS.cols.referrer_activated, suc = DS.cols.successful_activated;
@@ -267,56 +259,73 @@ const AGG = {
     };
   },
 
-  /** The Sales tracking table: one row per city, plus an India total.
+  /** The Referrer Activation table: one row per cluster, plus an India total.
    *
-   * Activation is measured inside the configured window, not lifetime, so this
-   * table and the funnel agree. Cx Recommended and IDV return null while they
-   * are placeholders -- rendered as a dash, never as a zero.
+   * Activation is measured inside the configured window, not lifetime. Cx
+   * Recommended and IDV stay null while they are placeholders.
    */
   cityTable(idx, dim) {
-    dim = dim || 'city';
-    const col = DS.cols[dim];
-    const act = DS.cols.referrer_activated, suc = DS.cols.successful_activated;
-    const lw = DS.cols.leads_in_window, ow = DS.cols.orders_in_window;
-    const rec = DS.cols.cx_recommended, idv = DS.cols.idv_done;
-    if (!act) return [];
-    const recLive = rec && rec.v.some(x => x !== null && x !== undefined);
-    const idvLive = idv && idv.v.some(x => x !== null && x !== undefined);
+    if (!DS.cols.referrer_activated) return [];
+    const groups = groupRows(idx, dim || 'city');
+    return [statsFor(idx, 'India (all)')].concat(
+      [...groups.entries()]
+        .map(([key, rows]) => statsFor(rows, key))
+        .sort((a, b) => b.installed - a.installed));
+  },
 
-    const blank = name => ({ name, rows: [], installed: 0, referrer_activated: 0,
-      successful_activated: 0, leads: 0, orders: 0, cx_recommended: recLive ? 0 : null,
-      idv: idvLive ? 0 : null });
-    const all = blank('India (all)');
-    const byKey = new Map();
-
-    for (const i of idx) {
-      const key = col && col.v[i] !== null && col.v[i] !== undefined
-        ? col.levels[col.v[i]] : '(unknown)';
-      let g = byKey.get(key);
-      if (!g) byKey.set(key, g = blank(key));
-      for (const t of [all, g]) {
-        t.installed++;
-        t.rows.push(i);
-        if (act.v[i]) t.referrer_activated++;
-        if (suc && suc.v[i]) t.successful_activated++;
-        t.leads += (lw && lw.v[i]) || 0;
-        t.orders += (ow && ow.v[i]) || 0;
-        if (recLive && rec.v[i]) t.cx_recommended++;
-        if (idvLive && idv.v[i]) t.idv++;
-      }
-    }
-    const finish = t => ({
-      ...t,
-      not_referred: t.installed - t.referrer_activated,
-      activation_rate: pct(t.referrer_activated, t.installed),
-      success_rate: pct(t.successful_activated, t.installed),
-      leads_per_referrer: t.referrer_activated
-        ? +(t.leads / t.referrer_activated).toFixed(2) : 0,
-      orders_per_referrer: t.referrer_activated
-        ? +(t.orders / t.referrer_activated).toFixed(2) : 0
+  /** Metrics in rows, installation months in columns, for one selection.
+   *
+   * Grouped on cohort_month -- the month the system was installed -- so a
+   * column is a cohort whose referrals are counted inside each customer's own
+   * activation window. It is not a calendar month of referral activity, and
+   * the newest columns are still filling.
+   */
+  monthlyMatrix(idx) {
+    const groups = groupRows(idx, 'cohort_month', '(no install month)');
+    const months = [...groups.keys()].sort().map(key => {
+      const t = statsFor(groups.get(key), key);
+      t.label = monthLabel(key);
+      return t;
     });
-    return [finish(all)].concat(
-      [...byKey.values()].sort((a, b) => b.installed - a.installed).map(finish));
+    const total = statsFor(idx, 'Total');
+    total.label = 'Total';
+    return { months, total };
+  },
+
+  /** Distinct values of a column with their row counts, biggest first.
+   *
+   * Feeds the deep-dive pickers, so it is computed over the rows currently in
+   * play rather than over the whole dataset -- a cluster that contributes
+   * nothing to the current date range should not be offered. */
+  countsBy(idx, col, fallback) {
+    if (!DS.has(col)) return [];
+    return [...groupRows(idx, col, fallback).entries()]
+      .map(([name, rows]) => ({ name, n: rows.length }))
+      .sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
+  },
+
+  /** Row indices whose value in a categorical column equals `value`. */
+  pickCat(idx, col, value, fallback) {
+    const c = DS.cols[col];
+    if (!c) return idx;
+    const code = c.levels.indexOf(value);
+    // The fallback label stands for NULL, which has no level of its own.
+    if (code < 0) return value === fallback
+      ? idx.filter(i => c.v[i] === null || c.v[i] === undefined) : [];
+    return idx.filter(i => c.v[i] === code);
+  },
+
+  /** One row per Solar Consultant, same metric set as the cluster table.
+   *
+   * Attribution is lead.assigned_sc on the customer's own order -- the book the
+   * consultant handed over, not whoever chased the referral later.
+   */
+  scTable(idx) {
+    if (!DS.has('sc_name') || !DS.cols.referrer_activated) return [];
+    const groups = groupRows(idx, 'sc_name', '(not assigned)');
+    return [...groups.entries()]
+      .map(([key, rows]) => statsFor(rows, key))
+      .sort((a, b) => b.installed - a.installed);
   },
 
   /** Who activates, and in which window after installation.
@@ -325,11 +334,10 @@ const AGG = {
    * referrer_activated. Blindspot referrals take no part.
    */
   subChannelByWindow(idx) {
-    const wcol = DS.cols.first_timing_bucket, scol = DS.cols.activated_by_window;
+    const wcol = DS.cols.activation_window, scol = DS.cols.activated_by_window;
     const act = DS.cols.referrer_activated, dta = DS.cols.days_to_activation;
     if (!wcol || !scol || !act) return { windows: [], series: {}, tat: [] };
-    const windows = (TIMING_BUCKETS || []).filter(
-      b => b.indexOf('blindspot') === -1 && b !== 'After window');
+    const windows = inWindowBuckets();
     const series = {};
     SOURCES.forEach(s => { series[s] = windows.map(() => 0); });
     const tatBy = new Map();
@@ -354,422 +362,14 @@ const AGG = {
       mean: +(tatBy.get(s).reduce((a, b) => a + b, 0) / tatBy.get(s).length).toFixed(1)
     }));
     return { windows, series, tat };
-  },
-
-  /** The Installed -> Recommended -> IDV -> Referrer funnel.
-   *
-   * Survey non-response is reported as its own stage. Without it the drop from
-   * 100% to ~7% reads as "customers will not recommend us", when it actually
-   * says "we have not asked most of them" -- 91% of those who DO answer are
-   * promoters.
-   */
-  funnelStages(idx) {
-    const n = idx.length;
-    const cols = {
-      answered: DS.cols.nps_answered, rec: DS.cols.cx_recommended,
-      idv: DS.cols.idv_done, ref: DS.cols.is_referrer,
-      suc: DS.cols.is_successful_referrer
-    };
-    const count = c => {
-      if (!c) return null;
-      let k = 0;
-      for (const i of idx) if (c.v[i]) k++;
-      return k;
-    };
-    const rows = [
-      { stage: 'Installed', customers: n },
-      { stage: 'Answered the survey', customers: count(cols.answered), coverage: true },
-      { stage: 'Cx Recommended', customers: count(cols.rec) },
-      { stage: 'IDV done', customers: count(cols.idv) },
-      { stage: 'Referrer', customers: count(cols.ref) },
-      { stage: 'Successful referrer', customers: count(cols.suc) }
-    ].filter(r => r.customers !== null);
-    return rows.map(r => ({ ...r, pct: pct(r.customers, n) }));
-  },
-
-  /** Does saying you would recommend actually predict referring?
-   *
-   * Split on the survey answer rather than on the funnel, so "did not answer"
-   * is visible as its own group instead of being lumped with detractors.
-   */
-  byNpsGroup(idx) {
-    const ans = DS.cols.nps_answered, score = DS.cols.nps_score;
-    const ref = DS.cols.is_referrer.v;
-    const suc = DS.cols.is_successful_referrer ? DS.cols.is_successful_referrer.v : null;
-    const rt = DS.cols.referrals_total.v;
-    if (!ans || !score) return [];
-    const min = (DS.meta.funnel_config || {}).min_score || 9;
-    const groups = new Map();
-    const put = (k, i) => {
-      let a = groups.get(k);
-      if (!a) groups.set(k, a = { group: k, base: 0, referrers: 0, successful: 0, referrals: 0 });
-      a.base++;
-      a.referrals += rt[i] || 0;
-      if (ref[i]) a.referrers++;
-      if (suc && suc[i]) a.successful++;
-    };
-    for (const i of idx) {
-      if (!ans.v[i]) { put('Did not answer', i); continue; }
-      const v = score.v[i];
-      if (v === null || v === undefined) { put('Did not answer', i); continue; }
-      if (v >= min) put(`Recommended (${min}-10)`, i);
-      else if (v >= 7) put('Passive (7-8)', i);
-      else put('Detractor (0-6)', i);
-    }
-    const order = [`Recommended (${min}-10)`, 'Passive (7-8)', 'Detractor (0-6)', 'Did not answer'];
-    return order.filter(k => groups.has(k)).map(k => {
-      const a = groups.get(k);
-      return { ...a,
-               rate: pct(a.referrers, a.base),
-               successRate: pct(a.successful, a.base),
-               perCustomer: +(a.referrals / a.base).toFixed(2) };
-    });
-  },
-
-  /** Second level of detail, for the two Sub-Channels that need it.
-   *
-   * Online splits into campaign-driven and unprompted, which convert very
-   * differently. Others splits into the routes that have no employee role for
-   * structural reasons (partners, employees) versus genuinely missing data.
-   */
-  subChannelDetail(idx) {
-    const col = DS.cols.sub_channel_detail;
-    if (!col) return [];
-    const isRef = DS.cols.is_referrer.v;
-    const rt = DS.cols.referrals_total.v;
-    const suc = DS.cols.is_successful_referrer ? DS.cols.is_successful_referrer.v : null;
-    const m = new Map();
-    let total = 0;
-    for (const i of idx) {
-      if (!isRef[i]) continue;
-      const v = col.v[i];
-      if (v === null || v === undefined) continue;
-      const k = col.levels[v];
-      let a = m.get(k);
-      if (!a) m.set(k, a = { detail: k, referrers: 0, successful: 0, referrals: 0 });
-      a.referrers++;
-      a.referrals += rt[i] || 0;
-      if (suc && suc[i]) a.successful++;
-      total++;
-    }
-    return [...m.values()]
-      .map(a => ({ ...a,
-                   share: pct(a.referrers, total),
-                   successShare: pct(a.successful, a.referrers) }))
-      .sort((x, y) => y.referrers - x.referrers);
-  },
-
-  /** cohort x months-since-install, cumulative activation %, maturity-masked */
-  triangle(idx, maxM = 24) {
-    const g = groupBy(idx, 'cohort_month');
-    const mtf = DS.cols.months_to_first_referral.v;
-    const mat = DS.cols.maturity_months.v;
-    const isRef = DS.cols.is_referrer.v;
-    const rows = [];
-    for (const cohort of [...g.keys()].sort()) {
-      const rowsIdx = g.get(cohort);
-      const size = rowsIdx.length;
-      let maturity = 0, referrers = 0;
-      for (const i of rowsIdx) { if (mat[i] > maturity) maturity = mat[i]; if (isRef[i]) referrers++; }
-      const cells = [];
-      for (let m = 0; m <= maxM; m++) {
-        if (m > maturity) { cells.push(null); continue; }
-        let hit = 0;
-        for (const i of rowsIdx) if (mtf[i] !== null && mtf[i] <= m) hit++;
-        cells.push(pct(hit, size));
-      }
-      rows.push({ cohort, size, maturity, referrers, cells });
-    }
-    return { months: Array.from({ length: maxM + 1 }, (_, i) => i), rows };
-  },
-
-  /** Activation % measured at a fixed age, so cohorts are comparable. */
-  indexedRate(idx, atMonth) {
-    const t = this.triangle(idx, Math.max(atMonth, 1));
-    return t.rows.map(r => ({
-      cohort: r.cohort,
-      size: r.size,
-      value: r.maturity >= atMonth ? r.cells[atMonth] : null,
-      partial: r.maturity < atMonth
-    }));
-  },
-
-  volumeByCohort(idx) {
-    const g = groupBy(idx, 'cohort_month');
-    const isRef = DS.cols.is_referrer.v;
-    return [...g.keys()].sort().map(cohort => {
-      const rows = g.get(cohort);
-      let referrers = 0;
-      for (const i of rows) if (isRef[i]) referrers++;
-      return { cohort, base: rows.length, referrers, rate: pct(referrers, rows.length) };
-    });
-  },
-
-  /** Counts of first-referral activation source, by cohort. */
-  sourceMixByCohort(idx) {
-    const g = groupBy(idx, 'cohort_month');
-    const ab = DS.cols.activated_by;
-    const cohorts = [...g.keys()].sort();
-    const series = {};
-    SOURCES.forEach(s => series[s] = []);
-    for (const cohort of cohorts) {
-      const counts = Object.fromEntries(SOURCES.map(s => [s, 0]));
-      for (const i of g.get(cohort)) {
-        const v = ab.v[i];
-        if (v === null || v === undefined) continue;
-        const name = ab.levels[v];
-        if (counts[name] !== undefined) counts[name]++;
-      }
-      SOURCES.forEach(s => series[s].push(counts[s]));
-    }
-    return { cohorts, series };
-  },
-
-  sourceStats(idx) {
-    const ab = DS.cols.activated_by, rt = DS.cols.referrals_total.v,
-          rc = DS.cols.referrals_converted.v, isRef = DS.cols.is_referrer.v,
-          dtf = DS.cols.days_to_first_referral.v;
-    const suc = DS.cols.is_successful_referrer ? DS.cols.is_successful_referrer.v : null;
-    const acc = Object.fromEntries(SOURCES.map(s =>
-      [s, { source: s, referrers: 0, referrals: 0, converted: 0, repeat: 0, successful: 0, days: [] }]));
-    let totalReferrers = 0;
-    for (const i of idx) {
-      if (!isRef[i]) continue;
-      const v = ab.v[i];
-      if (v === null || v === undefined) continue;
-      const a = acc[ab.levels[v]];
-      if (!a) continue;
-      totalReferrers++;
-      a.referrers++;
-      if (suc && suc[i]) a.successful++;
-      a.referrals += rt[i] || 0;
-      a.converted += rc[i] || 0;
-      if ((rt[i] || 0) >= 2) a.repeat++;
-      if (dtf[i] !== null) a.days.push(dtf[i]);
-    }
-    return SOURCES.map(s => {
-      const a = acc[s];
-      return {
-        source: s,
-        referrers: a.referrers,
-        successful: a.successful,
-        successShare: pct(a.successful, a.referrers),
-        share: pct(a.referrers, totalReferrers),
-        referrals: a.referrals,
-        avgReferrals: a.referrers ? +(a.referrals / a.referrers).toFixed(2) : 0,
-        repeatRate: pct(a.repeat, a.referrers),
-        convRate: pct(a.converted, a.referrals),
-        medianDays: median(a.days)
-      };
-    }).filter(r => r.referrers > 0);
-  },
-
-  /** base / referrers / rate for any categorical dimension */
-  byDimension(idx, col, minBase = 1) {
-    if (!DS.has(col)) return [];
-    const g = groupBy(idx, col);
-    const isRef = DS.cols.is_referrer.v, rt = DS.cols.referrals_total.v;
-    const out = [];
-    for (const [key, rows] of g) {
-      let referrers = 0, referrals = 0;
-      for (const i of rows) { if (isRef[i]) referrers++; referrals += rt[i] || 0; }
-      if (rows.length < minBase) continue;
-      out.push({
-        key, base: rows.length, referrers, referrals,
-        rate: pct(referrers, rows.length),
-        perCustomer: +(referrals / rows.length).toFixed(3)
-      });
-    }
-    return out.sort((a, b) => b.base - a.base);
-  },
-
-  /** Distribution of first-referral timing, relative to commissioning.
-   *
-   * Most referrals land within a couple of months either side of
-   * commissioning, so the months near zero are kept as individual bars and
-   * only the thin tails are grouped. Lumping all pre-install referrals into
-   * one bucket would hide the shape, which is the whole point of the chart.
-   */
-  timingHistogram(idx) {
-    const mtf = DS.cols.months_to_first_referral.v;
-    const BINS = [
-      { key: -99, label: '7m+ before', test: m => m <= -7, pre: true },
-      ...[-6, -5, -4, -3, -2, -1].map(m => ({ key: m, label: `${-m}m before`, test: x => x === m, pre: true })),
-      { key: 0, label: 'same month', test: m => m === 0, pre: false },
-      ...[1, 2, 3, 4, 5, 6].map(m => ({ key: m, label: `${m}m after`, test: x => x === m, pre: false })),
-      { key: 90, label: '7-12m after', test: m => m >= 7 && m <= 12, pre: false },
-      { key: 91, label: '13-24m after', test: m => m >= 13 && m <= 24, pre: false },
-      { key: 92, label: '24m+ after', test: m => m > 24, pre: false }
-    ];
-    const counts = BINS.map(() => 0);
-    let total = 0;
-    for (const i of idx) {
-      const m = mtf[i];
-      if (m === null || m === undefined) continue;
-      total++;
-      for (let b = 0; b < BINS.length; b++) {
-        if (BINS[b].test(m)) { counts[b]++; break; }
-      }
-    }
-    return BINS.map((b, n) => ({
-      key: b.key, label: b.label, count: counts[n], pre: b.pre,
-      pct: pct(counts[n], total)
-    })).filter(b => b.count > 0);
-  },
-
-  /** Pre- vs post-commissioning split, measured in DAYS.
-   *
-   * Not the same as counting negative month buckets: a referral 13 days before
-   * commissioning in the same calendar month is "before" by days but lands in
-   * the "same month" bar. Days is the honest number for the headline.
-   */
-  preInstallSplit(idx) {
-    const isRef = DS.cols.is_referrer.v, dtf = DS.cols.days_to_first_referral.v;
-    let pre = 0, post = 0;
-    for (const i of idx) {
-      if (!isRef[i] || dtf[i] === null) continue;
-      if (dtf[i] < 0) pre++; else post++;
-    }
-    return { pre, post, total: pre + post, prePct: pct(pre, pre + post) };
-  },
-
-  prePost(idx) {
-    const isRef = DS.cols.is_referrer.v, pi = DS.cols.pre_install_referrer.v,
-          rt = DS.cols.referrals_total.v, rc = DS.cols.referrals_converted.v;
-    const g = { pre: { n: 0, referrals: 0, converted: 0, repeat: 0 },
-                post: { n: 0, referrals: 0, converted: 0, repeat: 0 } };
-    for (const i of idx) {
-      if (!isRef[i]) continue;
-      const k = pi[i] ? 'pre' : 'post';
-      g[k].n++;
-      g[k].referrals += rt[i] || 0;
-      g[k].converted += rc[i] || 0;
-      if ((rt[i] || 0) >= 2) g[k].repeat++;
-    }
-    return ['pre', 'post'].map(k => ({
-      group: k === 'pre' ? 'Referred before install' : 'Referred after install',
-      n: g[k].n,
-      avgReferrals: g[k].n ? +(g[k].referrals / g[k].n).toFixed(2) : 0,
-      repeatRate: pct(g[k].repeat, g[k].n),
-      convRate: pct(g[k].converted, g[k].referrals)
-    }));
-  },
-
-  speedByCohort(idx, minMaturity = 6) {
-    const g = groupBy(idx, 'cohort_month');
-    const isRef = DS.cols.is_referrer.v, dtf = DS.cols.days_to_first_referral.v,
-          mat = DS.cols.maturity_months.v;
-    const out = [];
-    for (const cohort of [...g.keys()].sort()) {
-      const rows = g.get(cohort);
-      if (!rows.length || mat[rows[0]] < minMaturity) continue;
-      const days = [];
-      for (const i of rows) if (isRef[i] && dtf[i] !== null && dtf[i] >= 0) days.push(dtf[i]);
-      if (days.length < 5) continue;  // too few to carry a stable median
-      out.push({ cohort, median: median(days), n: days.length });
-    }
-    return out;
-  },
-
-  depth(idx, maxN = 8) {
-    const isRef = DS.cols.is_referrer.v, rt = DS.cols.referrals_total.v;
-    const referrers = [];
-    for (const i of idx) if (isRef[i]) referrers.push(rt[i] || 0);
-    const total = referrers.length;
-    return Array.from({ length: maxN }, (_, k) => {
-      const n = k + 1;
-      const count = referrers.reduce((acc, v) => acc + (v >= n ? 1 : 0), 0);
-      return { n, count, pct: pct(count, total) };
-    });
-  },
-
-  /** Average referrals given, by how long the customer has been on the base. */
-  velocityByMaturity(idx) {
-    const mat = DS.cols.maturity_months.v, rt = DS.cols.referrals_total.v,
-          isRef = DS.cols.is_referrer.v;
-    const bands = [[0, 2], [3, 5], [6, 8], [9, 11], [12, 17], [18, 23], [24, 999]];
-    return bands.map(([lo, hi]) => {
-      let n = 0, refCount = 0, referrals = 0;
-      for (const i of idx) {
-        if (mat[i] < lo || mat[i] > hi) continue;
-        n++;
-        referrals += rt[i] || 0;
-        if (isRef[i]) refCount++;
-      }
-      return {
-        label: hi === 999 ? '24m+' : `${lo}-${hi}m`,
-        base: n,
-        perCustomer: n ? +(referrals / n).toFixed(2) : 0,
-        perReferrer: refCount ? +(referrals / refCount).toFixed(2) : 0,
-        rate: pct(refCount, n)
-      };
-    }).filter(b => b.base > 0);
-  },
-
-  durabilityBySource(idx) {
-    const ab = DS.cols.activated_by, rt = DS.cols.referrals_total.v,
-          isRef = DS.cols.is_referrer.v;
-    const acc = Object.fromEntries(SOURCES.map(s => [s, { one: 0, two: 0, three: 0 }]));
-    for (const i of idx) {
-      if (!isRef[i]) continue;
-      const v = ab.v[i];
-      if (v === null || v === undefined) continue;
-      const a = acc[ab.levels[v]];
-      if (!a) continue;
-      const n = rt[i] || 0;
-      if (n >= 3) a.three++; else if (n === 2) a.two++; else a.one++;
-    }
-    return SOURCES
-      .map(s => ({ source: s, ...acc[s], total: acc[s].one + acc[s].two + acc[s].three }))
-      .filter(r => r.total > 0);
-  },
-
-  /** Non-referrers by cohort, split by whether they have had a fair chance yet. */
-  gapByCohort(idx, fairMonths = 6) {
-    const g = groupBy(idx, 'cohort_month');
-    const isRef = DS.cols.is_referrer.v, mat = DS.cols.maturity_months.v;
-    return [...g.keys()].sort().map(cohort => {
-      let mature = 0, young = 0, referrers = 0;
-      for (const i of g.get(cohort)) {
-        if (isRef[i]) { referrers++; continue; }
-        if (mat[i] >= fairMonths) mature++; else young++;
-      }
-      return { cohort, referrers, mature, young, base: g.get(cohort).length };
-    });
-  },
-
-  /** Largest pools of mature non-referrers, by a chosen segmentation. */
-  gapSegments(idx, cols, fairMonths = 6, limit = 60) {
-    const isRef = DS.cols.is_referrer.v, mat = DS.cols.maturity_months.v;
-    const avail = cols.filter(c => DS.has(c));
-    const map = new Map();
-    for (const i of idx) {
-      if (mat[i] < fairMonths) continue;
-      const key = avail.map(c => DS.cat(c, i) ?? '(none)').join(' · ');
-      let a = map.get(key);
-      if (!a) map.set(key, a = { key, base: 0, referrers: 0, untapped: 0 });
-      a.base++;
-      if (isRef[i]) a.referrers++; else a.untapped++;
-    }
-    return [...map.values()]
-      .map(a => ({ ...a, rate: pct(a.referrers, a.base) }))
-      .sort((x, y) => y.untapped - x.untapped)
-      .slice(0, limit);
-  },
-
-  /** Untapped pool weighted by how well comparable customers activate. */
-  prioritySegments(idx, cols, fairMonths = 6, limit = 40) {
-    const rows = this.gapSegments(idx, cols, fairMonths, 500);
-    const overall = this.summary(idx).rate;
-    return rows
-      .filter(r => r.base >= 20)
-      .map(r => ({
-        ...r,
-        // Expected additional referrers if this segment reached its own peers' rate.
-        headroom: Math.round(r.untapped * (r.rate / 100)),
-        vsAvg: +(r.rate - overall).toFixed(2)
-      }))
-      .sort((a, b) => b.headroom - a.headroom)
-      .slice(0, limit);
   }
 };
+
+/** The timing buckets that sit inside the activation window.
+ *
+ * The blindspot is excluded by design, and "After window" cannot appear among
+ * activated customers -- a referral past +90 days does not activate anyone. */
+function inWindowBuckets() {
+  return (TIMING_BUCKETS || []).filter(
+    b => b.indexOf('blindspot') === -1 && b !== 'After window');
+}

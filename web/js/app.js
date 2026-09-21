@@ -192,8 +192,29 @@ function buildFilters() {
     render();
   });
 
+  // Changing the cluster invalidates whichever consultant was chosen -- they
+  // may not work that cluster at all -- so clear it rather than silently
+  // showing an empty book.
+  document.getElementById('ddCluster').addEventListener('change', e => {
+    DD.cluster = e.target.value;
+    DD.sc = '';
+    render();
+  });
+  document.getElementById('ddSc').addEventListener('change', e => {
+    DD.sc = e.target.value;
+    render();
+  });
+  // Delegated, because renderTable replaces the table on every sort.
+  document.getElementById('tblSc').addEventListener('click', e => {
+    const hit = e.target.closest('.sc-pick');
+    if (!hit) return;
+    DD.sc = DD.sc === hit.dataset.sc ? '' : hit.dataset.sc;
+    render();
+  });
+
   document.getElementById('resetFilters').addEventListener('click', () => {
     F.state.clear(); F.branch.clear();
+    DD.cluster = ''; DD.sc = '';
     document.querySelectorAll('.ms').forEach(el => { if (el._reset) el._reset(); });
     const [a, b] = presetRange('3m', maxDay);
     setRange(a, b, '3m');
@@ -241,68 +262,69 @@ const dot = v =>
   '<span style="color:' + (SOURCE_COLOR[v] || '#94a3b8') + ';font-weight:700">&#9679;</span> ' + v;
 
 /* ---------------------------------------------------------------------- */
+/* City Deep Dive selection.
+ *
+ * Deliberately separate from F: the filter bar decides which customers are in
+ * play at all, this decides which slice of them the deep dive is looking at.
+ * Empty string means "no narrowing", which keeps it comparable with a <select>
+ * value directly. */
+const DD = { cluster: '', sc: '' };
+
+/** Repopulate a <select>, keeping the current choice when it still exists.
+ *
+ * Options are derived from the rows currently in play, so a change to the date
+ * range or the State filter can remove whatever was selected. Falling back to
+ * "all" is the honest outcome -- the alternative is a picker showing a cluster
+ * that contributes no rows. */
+function fillSelect(el, options, value, allLabel) {
+  const keep = options.some(o => o.name === value) ? value : '';
+  el.innerHTML = '<option value="">' + escHtml(allLabel) + '</option>' +
+    options.map(o =>
+      '<option value="' + escAttr(o.name) + '">' +
+      escHtml(o.name) + ' &middot; ' + fmtInt(o.n) + '</option>').join('');
+  el.value = keep;
+  return keep;
+}
+
+/** The rows of the month-on-month matrix, in reading order.
+ *
+ * Built fresh each render because the Sub-Channel and window lists come from
+ * meta.json, which is only known after the data loads. */
+function matrixRows() {
+  const ratio = v => v.toFixed(2);
+  const rows = [
+    { section: 'Base' },
+    { label: 'Installed base', get: t => t.installed, metric: 'installed', strong: true },
+    { label: 'Cx Recommended', get: t => t.cx_recommended, metric: 'cx_recommended' },
+    { label: 'IDV visits', get: t => t.idv, metric: 'idv' },
+    { section: 'Activation' },
+    { label: 'Referrer activation', get: t => t.referrer_activated,
+      metric: 'referrer_activated', strong: true },
+    { label: 'Act %', get: t => t.activation_rate, fmt: fmtPct, rate: true },
+    { label: 'Orders activation', get: t => t.successful_activated,
+      metric: 'successful_activated' },
+    { label: 'Order %', get: t => t.success_rate, fmt: fmtPct, rate: true },
+    { label: 'Not referred', get: t => t.not_referred, metric: 'not_referred' },
+    { section: 'Referral output' },
+    { label: '# Leads', get: t => t.leads, metric: 'leads' },
+    { label: '# Orders', get: t => t.orders, metric: 'orders' },
+    { label: 'Leads / referrer', get: t => t.leads_per_referrer, fmt: ratio, rate: true },
+    { label: 'Orders / referrer', get: t => t.orders_per_referrer, fmt: ratio, rate: true },
+    { section: 'Who activated them' }
+  ];
+  // These two blocks split referrer_activated two ways, so each sums back to it.
+  SOURCES.forEach(s => rows.push({
+    label: dot(s), sub: true, get: t => t.bySubChannel[s] || 0, metric: 'sub:' + s
+  }));
+  rows.push({ section: 'When they activated' });
+  inWindowBuckets().forEach(w => rows.push({
+    label: w, sub: true, get: t => t.byWindow[w] || 0, metric: 'win:' + w
+  }));
+  return rows;
+}
+
+/* ---------------------------------------------------------------------- */
 const PANELS = {
-  overview(idx, s) {
-    const buckets = AGG.timingBuckets(idx);
-    chartTimingBuckets(buckets);
-
-    const tat = AGG.preInstallTAT(idx).overall;
-    const before = buckets.find(b => b.bucket === 'Before installation');
-    const week = buckets
-      .filter(b => b.bucket.indexOf('Install + 0-3') === 0 || b.bucket.indexOf('Install + 4-7') === 0)
-      .reduce((n, b) => n + b.pct, 0);
-    document.getElementById('timingFinding').innerHTML = buckets.length
-      ? '<strong>' + fmtPct(before ? before.pct : 0) + '</strong> of referrers give their ' +
-        'first referral <strong>before installation</strong>' +
-        (tat ? ', a median of <strong>' + fmtInt(tat.p50) + ' days</strong> after HOTO (p90 ' +
-               fmtInt(tat.p90) + ' days)' : '') +
-        '. A further ' + fmtPct(week) + ' come in within a week of installation.'
-      : '';
-
-    chartCohort(AGG.volumeByCohort(idx));
-    chartDepth(AGG.depth(idx, 6));
-  },
-
-  activation(idx, s) {
-    const stats = AGG.sourceStats(idx);
-    chartSource(stats);
-    chartBeforeAfter(AGG.subChannelBeforeAfter(idx));
-
-    renderTable('tblSource', [
-      { key: 'source', label: 'Sub-Channel', fmt: dot },
-      { key: 'referrers', label: 'Referrers', num: true, bar: true },
-      { key: 'share', label: 'Share', num: true, pct: true },
-      { key: 'successful', label: 'Successful', num: true },
-      { key: 'successShare', label: 'Success rate', num: true, pct: true },
-      { key: 'referrals', label: 'Referrals', num: true },
-      { key: 'avgReferrals', label: 'Each gave', num: true, fmt: v => v.toFixed(2) },
-      { key: 'repeatRate', label: 'Refers again', num: true, pct: true },
-      { key: 'convRate', label: 'Became orders', num: true, pct: true }
-    ], stats, { sortKey: 'referrers' });
-
-    const detail = AGG.subChannelDetail(idx);
-    chartDetail(detail);
-    renderTable('tblDetail', [
-      { key: 'detail', label: 'Detail' },
-      { key: 'referrers', label: 'Referrers', num: true, bar: true },
-      { key: 'share', label: 'Share', num: true, pct: true },
-      { key: 'successful', label: 'Successful', num: true },
-      { key: 'successShare', label: 'Success rate', num: true, pct: true },
-      { key: 'referrals', label: 'Referrals', num: true }
-    ], detail, { sortKey: 'referrers' });
-
-    const tat = AGG.preInstallTAT(idx);
-    const rows = tat.bySubChannel.slice();
-    if (tat.overall) rows.push({ sub_channel: 'All', ...tat.overall });
-    const signed = v => (v < 0 ? fmtInt(-v) + 'd before' : fmtInt(v) + 'd after');
-    renderTable('tblTat', [
-      { key: 'sub_channel', label: 'Sub-Channel',
-        fmt: v => (v === 'All' ? '<strong>' + v + '</strong>' : dot(v)) },
-      { key: 'n', label: 'Referrers', num: true, bar: true },
-      { key: 'p50', label: 'p50 from HOTO', num: true, fmt: signed },
-      { key: 'p90', label: 'p90 from HOTO', num: true, fmt: signed }
-    ], rows, { sortKey: 'n' });
-  },
 
   sales(idx, s) {
     const cfg = DS.meta.activation || { start: -3, end: 90 };
@@ -341,12 +363,12 @@ const PANELS = {
         ' leads and ' + fmtInt(india.orders) + ' orders. <strong>' +
         fmtInt(india.not_referred) + '</strong> have not referred.' +
         (missing.length
-          ? ' <em>Downloads exclude customer and staff identity &mdash; this build is in ' +
+          ? ' <em>Downloads exclude customer identity &mdash; this build is in ' +
             'public mode. Rebuild with <code>--mode gated</code> for the full sheet.</em>'
           : '')
       : '';
 
-    // The public build has no identity columns by design; the named sheet
+    // The public build has no customer identity by design; the named sheet
     // lives in Google, restricted to the Workspace domain.
     const link = document.getElementById('sheetLink');
     if (DS.meta.sheet_url && missing.length) {
@@ -354,7 +376,7 @@ const PANELS = {
       link.innerHTML =
         '<a href="' + DS.meta.sheet_url + '" target="_blank" rel="noopener">' +
         'Open the full customer sheet &rarr;</a>' +
-        '<span> SSEID, name, SC and Installation Champion live there, ' +
+        '<span> SSEID, name and Installation Champion live there, ' +
         'restricted to the SolarSquare Google Workspace.</span>';
     } else {
       link.hidden = true;
@@ -371,64 +393,81 @@ const PANELS = {
     ], mix.tat, { sortKey: 'n' });
   },
 
-  funnel(idx, s) {
-    const stages = AGG.funnelStages(idx);
-    chartFunnel(stages);
+  /* One cluster, every metric, month by month -- and who on the ground owns it. */
+  deepdive(idx) {
+    const clusters = AGG.countsBy(idx, 'branch');
+    DD.cluster = fillSelect(document.getElementById('ddCluster'), clusters,
+                            DD.cluster, 'India — all clusters');
+    const scopeIdx = DD.cluster ? AGG.pickCat(idx, 'branch', DD.cluster) : idx;
 
-    const cfg = DS.meta.funnel_config || {};
-    const answered = stages.find(x => x.stage === 'Answered the survey');
-    const rec = stages.find(x => x.stage === 'Cx Recommended');
-    const idv = stages.find(x => x.stage === 'IDV done');
-    const recOfAnswered = answered && answered.customers
-      ? pct(rec ? rec.customers : 0, answered.customers) : 0;
-    document.getElementById('funnelFinding').innerHTML =
-      'Only <strong>' + fmtPct(answered ? answered.pct : 0) + '</strong> of the installed ' +
-      'base has answered the survey, but <strong>' + fmtPct(recOfAnswered) + '</strong> of ' +
-      'those who did scored ' + (cfg.min_score || 9) + '&ndash;' + (cfg.scale_max || 10) + '. ' +
-      'The drop at <em>Cx Recommended</em> is mostly reach, not reluctance.' +
-      (idv && idv.customers < 50
-        ? ' IDV (<code>' + (cfg.idv_task_keys || []).join(', ') + '</code>, ' +
-          (cfg.idv_days_before || 3) + ' days before to ' + (cfg.idv_days_after || 3) +
-          ' days after installation) went live in September 2026, so it is still near zero.'
-        : '');
+    // sc_name ships in the public build specifically so this works; if a build
+    // ever drops it, hide the control rather than showing an empty picker.
+    const hasSc = DS.has('sc_name');
+    document.getElementById('ddScField').hidden = !hasSc;
+    document.getElementById('cardSc').hidden = !hasSc;
+    const consultants = hasSc ? AGG.countsBy(scopeIdx, 'sc_name', '(not assigned)') : [];
+    DD.sc = hasSc
+      ? fillSelect(document.getElementById('ddSc'), consultants, DD.sc, 'All consultants')
+      : '';
+    const viewIdx = DD.sc ? AGG.pickCat(scopeIdx, 'sc_name', DD.sc, '(not assigned)') : scopeIdx;
 
-    const npsRows = AGG.byNpsGroup(idx);
-    if (!npsRows.length) {
-      // Distinguish "no source yet" from "no rows matched" -- the generic
-      // empty-table message would read as the latter.
-      document.getElementById('tblNps').innerHTML =
-        '<p class="muted">Cx Recommended is a placeholder &mdash; no source is wired up ' +
-        'yet, so there is nothing to split on. This table fills in once ' +
-        '<code>cx_recommended.enabled</code> is turned on in ' +
-        '<code>etl/funnel_config.json</code>.</p>';
-      return;
+    const where = DD.cluster || 'India';
+    const label = where + (DD.sc ? ' · ' + DD.sc : '');
+    document.getElementById('ddTitle').textContent = label;
+    document.getElementById('ddScTitle').textContent =
+      DD.cluster || 'India (all clusters)';
+    document.getElementById('ddScope').innerHTML =
+      '<strong>' + fmtInt(viewIdx.length) + '</strong> customers in scope, ' +
+      'out of ' + fmtInt(idx.length) + ' matching the filters above' +
+      (DD.sc ? ' &mdash; ' + escHtml(DD.sc) + '&rsquo;s book inside ' + escHtml(where)
+             : (DD.cluster ? ' &mdash; all consultants in ' + escHtml(where) : '')) + '.';
+
+    const mm = AGG.monthlyMatrix(viewIdx);
+    const columns = mm.months.map(t => ({ key: t.name, label: t.label, stats: t }));
+    columns.push({ key: '__total', label: 'Total', stats: mm.total, total: true });
+    renderMatrix('tblMonthly', matrixRows(), columns,
+                 { drilldown: drilldownOn, label });
+
+    // Compare the first and last full month in view. With one month there is no
+    // trend to report, so say the level instead of inventing a direction.
+    const f = mm.months[0], l = mm.months[mm.months.length - 1];
+    const fin = document.getElementById('ddFinding');
+    if (!f) { fin.innerHTML = ''; }
+    else if (mm.months.length === 1) {
+      fin.innerHTML = '<strong>' + escHtml(label) + '</strong> installed ' +
+        fmtInt(f.installed) + ' customers in ' + f.label + ', of whom ' +
+        fmtInt(f.referrer_activated) + ' activated (' + fmtPct(f.activation_rate) + ').';
+    } else {
+      const delta = +(l.activation_rate - f.activation_rate).toFixed(1);
+      fin.innerHTML = '<strong>' + escHtml(label) + '</strong> activation moved from ' +
+        fmtPct(f.activation_rate) + ' in ' + f.label + ' to ' +
+        fmtPct(l.activation_rate) + ' in ' + l.label +
+        ' (<span class="' + (delta >= 0 ? 'pos' : 'neg') + '">' +
+        (delta >= 0 ? '+' : '') + delta + ' pt</span>), on ' +
+        fmtInt(mm.total.installed) + ' customers installed across ' +
+        mm.months.length + ' months. ' + l.label + ' is still inside its own ' +
+        ((DS.meta.activation || {}).end || 90) + '-day window, so it will keep rising.';
     }
-    renderTable('tblNps', [
-      { key: 'group', label: 'Survey answer' },
-      { key: 'base', label: 'Customers', num: true, bar: true },
-      { key: 'referrers', label: 'Referrers', num: true },
-      { key: 'rate', label: 'Referral rate', num: true, pct: true },
-      { key: 'successful', label: 'Successful', num: true },
-      { key: 'successRate', label: 'Success rate', num: true, pct: true },
-      { key: 'perCustomer', label: 'Referrals each', num: true, fmt: v => v.toFixed(2) }
-    ], npsRows, { sortKey: 'base' });
-  },
 
-  coverage(idx, s) {
-    chartGap(AGG.gapByCohort(idx));
-    const cols = [
-      { key: 'key', label: 'Name' },
-      { key: 'untapped', label: 'Never referred', num: true, bar: true },
-      { key: 'base', label: 'Customers', num: true },
-      { key: 'rate', label: 'Activation', num: true, pct: true },
-      { key: 'vsAvg', label: 'vs avg', num: true, signed: true,
-        fmt: v => (v > 0 ? '+' : '') + v.toFixed(1) + ' pt' }
-    ];
-    const decorate = rows => rows.map(r => ({
-      ...r, untapped: r.base - r.referrers, vsAvg: +(r.rate - s.rate).toFixed(2)
-    }));
-    renderTable('tblState', cols, decorate(AGG.byDimension(idx, 'state', 20)), { sortKey: 'untapped' });
-    renderTable('tblBranch', cols, decorate(AGG.byDimension(idx, 'city', 20)), { sortKey: 'untapped' });
+    if (!hasSc) return;
+    // The table always lists every consultant in the cluster, selected or not --
+    // the point is to rank them against each other, not to look at one alone.
+    const numCol = (k, l, metric) => ({ key: k, label: l, num: true, metric: metric || k });
+    renderTable('tblSc', [
+      { key: 'name', label: 'Solar Consultant',
+        fmt: v => '<span class="sc-pick" data-sc="' + escAttr(v) + '">' + escHtml(v) + '</span>' },
+      numCol('installed', 'Installed base'),
+      numCol('referrer_activated', 'Referrer activation'),
+      { key: 'activation_rate', label: 'Act %', num: true, pct: true },
+      numCol('successful_activated', 'Orders activation'),
+      { key: 'success_rate', label: 'Order %', num: true, pct: true },
+      numCol('not_referred', 'Not referred'),
+      numCol('leads', '# Leads'),
+      numCol('orders', '# Orders'),
+      { key: 'leads_per_referrer', label: 'Leads / referrer', num: true, fmt: v => v.toFixed(2) },
+      { key: 'orders_per_referrer', label: 'Orders / referrer', num: true, fmt: v => v.toFixed(2) }
+    ], AGG.scTable(scopeIdx),
+       { sortKey: 'installed', drilldown: drilldownOn, highlight: DD.sc });
   }
 };
 

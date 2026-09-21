@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Referral Activation</title>
 <link rel="icon" type="image/png" href="sse-logo.png">
-<link rel="stylesheet" href="styles.css?v=75bcbb3a">
+<link rel="stylesheet" href="styles.css?v=7ab3edc2">
 </head>
 <body>
 
@@ -72,103 +72,8 @@
 
   <nav class="tabs" role="tablist">
     <button role="tab" class="tab active" data-tab="sales">Referrer Activation</button>
-    <button role="tab" class="tab" data-tab="overview">Overview</button>
-    <button role="tab" class="tab" data-tab="activation">Sub-Channel</button>
-    <button role="tab" class="tab" data-tab="funnel">Funnel</button>
-    <button role="tab" class="tab" data-tab="coverage">Coverage gap</button>
+    <button role="tab" class="tab" data-tab="deepdive">City Deep Dive</button>
   </nav>
-
-  <!-- ---------------------------------------------------------------- -->
-  <section class="panel" data-panel="overview" hidden>
-    <div class="card wide">
-      <div class="card-head">
-        <h2>When the first referral comes in</h2>
-        <p>Each referrer placed by where their <strong>first</strong> referral landed
-           relative to their own installation. Commissioning takes precedence: once a
-           system is commissioned the customer counts as <em>After commissioning</em>,
-           even if that happens inside the first 8 days.</p>
-      </div>
-      <div class="chart" id="chTiming"></div>
-      <p class="finding" id="timingFinding"></p>
-    </div>
-
-    <div class="card">
-      <div class="card-head">
-        <h2>Activation by installation month</h2>
-        <p>Share of each month&rsquo;s installed customers who have referred at least once.</p>
-        <p class="caveat">Recent months sit low because much of the referral window has
-           not passed yet &mdash; not because they are worse. Set a minimum age to compare
-           fairly.</p>
-      </div>
-      <div class="chart" id="chCohort"></div>
-    </div>
-
-    <div class="card">
-      <div class="card-head">
-        <h2>Do they refer again?</h2>
-        <p>Of everyone who gave a first referral, how many went on to give more.</p>
-      </div>
-      <div class="chart" id="chDepth"></div>
-    </div>
-  </section>
-
-  <!-- ---------------------------------------------------------------- -->
-  <section class="panel" data-panel="activation" hidden>
-    <div class="card">
-      <div class="card-head">
-        <h2>Sub-Channel of first referral</h2>
-        <p>Which Sub-Channel under Referral activated each customer, taken from the
-           referrer role on their first referral.</p>
-      </div>
-      <div class="chart" id="chSource"></div>
-    </div>
-
-    <div class="card">
-      <div class="card-head">
-        <h2>Before vs after installation</h2>
-        <p>A customer who referred on both sides of their installation is counted in
-           both bars, so these do not sum to the referrer count.</p>
-      </div>
-      <div class="chart" id="chBeforeAfter"></div>
-    </div>
-
-    <div class="card wide">
-      <div class="card-head">
-        <h2>Sub-Channel quality</h2>
-        <p>A <em>successful referrer</em> is one whose referral became an order.
-           <em>Refers again</em> is the share who gave a second referral.</p>
-      </div>
-      <div id="tblSource" class="table-wrap"></div>
-    </div>
-
-    <div class="card wide">
-      <div class="card-head">
-        <h2>Inside Online and Others</h2>
-        <p>The two Sub-Channels that are not one population. Online splits on whether
-           a <code>utm_campaign</code> prompted the referral; Others splits on the
-           underlying referral source.</p>
-        <p class="caveat"><em>Campaign-driven</em> referrals carry a
-           <code>utm_campaign</code> (WhatsApp blasts, brand search, promos);
-           <em>unprompted</em> ones carry none. What remains in Others is mostly routes
-           with no employee role by design &mdash; only the unattributed row is genuinely
-           unknown.</p>
-      </div>
-      <div class="chart" id="chDetail"></div>
-      <div id="tblDetail" class="table-wrap"></div>
-    </div>
-
-    <div class="card wide">
-      <div class="card-head">
-        <h2>How fast the referral is captured, before installation</h2>
-        <p>Days from <strong>HOTO</strong> to the first referral, for customers who
-           referred before their system was installed.</p>
-        <p class="caveat">Negative means the referral was captured <strong>before</strong>
-           the HOTO milestone was recorded &mdash; common for Sales, where the consultant
-           takes the referral around handover. Customers with no HOTO date are excluded.</p>
-      </div>
-      <div id="tblTat" class="table-wrap"></div>
-    </div>
-  </section>
 
   <!-- ---------------------------------------------------------------- -->
   <section class="panel" data-panel="sales">
@@ -207,53 +112,49 @@
   </section>
 
   <!-- ---------------------------------------------------------------- -->
-  <section class="panel" data-panel="funnel" hidden>
-    <div class="card wide">
-      <div class="card-head">
-        <h2>Installed &rarr; Recommended &rarr; IDV &rarr; Referrer</h2>
-        <p>Each stage as a share of the installed base. <em>Answered the survey</em> is
-           shown in grey because it measures our reach, not the customer.</p>
+  <section class="panel" data-panel="deepdive" hidden>
+    <div class="card wide dd-head-card">
+      <div class="dd-picker">
+        <div class="dd-field">
+          <label for="ddCluster">Cluster</label>
+          <select id="ddCluster" class="dd-select"></select>
+        </div>
+        <div class="dd-field" id="ddScField">
+          <label for="ddSc">Solar Consultant</label>
+          <select id="ddSc" class="dd-select"></select>
+        </div>
+        <p class="dd-scope" id="ddScope"></p>
       </div>
-      <div class="chart" id="chFunnel"></div>
-      <p class="finding" id="funnelFinding"></p>
     </div>
 
     <div class="card wide">
       <div class="card-head">
-        <h2>Does saying yes predict referring?</h2>
-        <p>Referral behaviour split by what the customer answered on the survey.
-           <em>Did not answer</em> is kept separate rather than folded in with
-           detractors &mdash; they are not the same population.</p>
+        <h2>Month on month &mdash; <span id="ddTitle" class="dd-title"></span></h2>
+        <p>Every metric for the selection, split by <strong>installation month</strong>.
+           Customers sit in the month their system was installed, and their referrals
+           are then counted inside that customer&rsquo;s own activation window &mdash;
+           so a column is a cohort, not a calendar of referrals.</p>
+        <p class="caveat">Recent months read low because most of their 90-day window
+           has not elapsed yet. <strong>Click any count to download that month&rsquo;s
+           customers</strong>; percentages and per-referrer ratios are derived, so they
+           are not clickable.</p>
       </div>
-      <div id="tblNps" class="table-wrap"></div>
-    </div>
-  </section>
-
-  <!-- ---------------------------------------------------------------- -->
-  <section class="panel" data-panel="coverage" hidden>
-    <div class="card wide">
-      <div class="card-head">
-        <h2>Referred vs never referred</h2>
-        <p>The dark band is customers old enough to have had a fair chance and still
-           never referred &mdash; the real addressable gap.</p>
-      </div>
-      <div class="chart" id="chGap"></div>
+      <div id="tblMonthly" class="table-wrap scroll matrix"></div>
+      <p class="finding" id="ddFinding"></p>
     </div>
 
-    <div class="card">
+    <div class="card wide" id="cardSc">
       <div class="card-head">
-        <h2>By state</h2>
-        <p>Sorted by untapped customers. Click a column to re-sort.</p>
+        <h2>Solar Consultants &mdash; <span id="ddScTitle" class="dd-title"></span></h2>
+        <p>Each consultant&rsquo;s own installed base and how much of it activated.
+           A customer is attributed to the consultant on their order
+           (<code>lead.assigned_sc</code>), so this is the book they handed over, not
+           who chased the referral afterwards.</p>
+        <p class="caveat">Pick a consultant above to narrow the month-on-month table to
+           their book alone. Consultants with a very small base swing wildly on
+           percentage &mdash; read the base column alongside the rate.</p>
       </div>
-      <div id="tblState" class="table-wrap scroll"></div>
-    </div>
-
-    <div class="card">
-      <div class="card-head">
-        <h2>By cluster</h2>
-        <p>Where outreach has the most customers to work with.</p>
-      </div>
-      <div id="tblBranch" class="table-wrap scroll"></div>
+      <div id="tblSc" class="table-wrap scroll centered"></div>
     </div>
   </section>
 
@@ -265,9 +166,9 @@
 
 <!-- vendored so the dashboard works behind corporate networks that block CDNs -->
 <script src="vendor/echarts.min.js?v=79a8b5a0"></script>
-<script src="js/data.js?v=c76b80ce"></script>
-<script src="js/charts.js?v=d2a659c0"></script>
-<script src="js/export.js?v=78065135"></script>
-<script src="js/app.js?v=53ae114b"></script>
+<script src="js/data.js?v=86c29369"></script>
+<script src="js/charts.js?v=4508e4e0"></script>
+<script src="js/export.js?v=ba8a5e7d"></script>
+<script src="js/app.js?v=4df65313"></script>
 </body>
 </html>

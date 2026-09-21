@@ -1,10 +1,10 @@
 # Data contract
 
 Two extracts come out of Metabase (SolarSquare Postgres, **database id 2**).
-Everything on the dashboard is derived from them in `etl/transform.py`, so all
-three tabs share one definition of "referrer", "activated", and "cohort".
+Everything on the dashboard is derived from them in `etl/transform.py`, so both
+tabs share one definition of "referrer", "activated", and "cohort".
 
-Grain: **one row per customer**, cohorted on their first commissioning date.
+Grain: **one row per customer**, cohorted on their first **installation** date.
 Referrals attach to a `prospectId`, not to an SSEID, so counting at project
 grain would double-count anyone with two projects.
 
@@ -12,13 +12,17 @@ grain would double-count anyone with two projects.
 
 ## Extract A — `installations` (`sql/01_installations.sql`)
 
-From `public.project`. One row per commissioned project.
+From `public.project`, joined to `usertasks` for the installation milestone.
+One row per installed project.
 
 | contract column | source column | notes |
 |---|---|---|
 | `install_id` | `sseid` | also the pagination key |
 | `customer_id` | `prospectId` | joins to `referrals.referredBy` |
-| `install_date` | `commissioning_date` | UTC → IST before casting to date |
+| `install_date` | `usertasks` task-039A completion | UTC → IST before casting to date. Deliberately **not** `project.installation_date` — see `sql/01_installations.sql` |
+| `hoto_date` | `lead.cx_approval_timestamp` | |
+| `commissioning_date` | `project.commissioning_date` | only truncates the post-install windows |
+| `sc_name` / `sc_email` | `lead.assigned_sc` → `users` | the Solar Consultant on the customer's order |
 | `state` / `city` / `branch` | `site_address_state` / `_city` / `_cluster` | |
 | `capacity_kw` | `project_size_kw` | |
 | `order_value` | `total_price` | |
@@ -110,13 +114,25 @@ minutes.
 
 | field | definition |
 |---|---|
-| `cohort_month` | month of first commissioning |
-| `is_referrer` | ≥ 1 referral |
-| `activated_by` | activation bucket of the **first** referral |
-| `days_to_first_referral` | negative when they referred before commissioning |
+| `cohort_month` | month of first installation — the column grain of the City Deep Dive matrix |
+| `is_referrer` | ≥ 1 referral, lifetime |
+| `activated_by` | Sub-Channel of the **first** referral, lifetime |
+| `referrer_activated` | ≥ 1 referral inside the activation window |
+| `activated_by_window` | Sub-Channel of the first **in-window** referral |
+| `first_timing_bucket` | window the first **lifetime** referral fell in — can be the blindspot |
+| `activation_window` | window the first **in-window** referral fell in. Non-null exactly when `referrer_activated` |
+| `days_to_first_referral` | negative when they referred before installation |
 | `pre_install_referrer` | `days_to_first_referral < 0` |
-| `maturity_months` | months elapsed since commissioning |
+| `maturity_months` | months elapsed since installation |
+
+`first_timing_bucket` and `activation_window` are not interchangeable, and the
+difference is not small. A customer whose very first referral fell in the
+blindspot but who referred again inside the window is activated — yet their
+`first_timing_bucket` sits outside the window entirely. Splitting activated
+customers by `first_timing_bucket` dropped 370 of 1,644 on a three-month view.
+Every window split uses `activation_window`, which sums back to
+`referrer_activated` by construction.
 
 The pre-install split is measured in **days**, not month buckets: a referral 13
-days before commissioning in the same calendar month is "before" by days but
-lands in the "same month" bar on the chart. Days is the honest headline.
+days before installation in the same calendar month is "before" by days but
+lands in the "same month" bar. Days is the honest headline.

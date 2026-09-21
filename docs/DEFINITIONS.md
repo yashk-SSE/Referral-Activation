@@ -266,15 +266,15 @@ is dead** — 8,506 rows in 2023, 38,858 in 2024, 4,610 in 2025 and **nothing in
 
 ---
 
-## 5c. The Sales tracker
+## 5c. Referrer Activation (tab 1)
 
-One row per city plus an **India (all)** total, over whatever the filters
+One row per **cluster** plus an **India (all)** total, over whatever the filters
 select. Intended use is the last three complete months — sitting in September,
 that is the Jun / Jul / Aug installed base.
 
 Columns: Installed base, Cx Recommended *(placeholder)*, IDV visits
-*(placeholder)*, Referrer activated, Act %, Successful activated, # Leads,
-# Orders, Leads / referrer, Orders / referrer.
+*(placeholder)*, Referrer activation, Act %, Orders activation, Order %,
+Not referred, # Leads, # Orders, Leads / referrer, Orders / referrer.
 
 ### Drill-down
 
@@ -297,11 +297,63 @@ browser, so it always matches what was on screen.
 
 The two `users` joins are the ones Metabase card 1466 ("OMS Plants") uses.
 
-> **The drill-down needs `--mode gated`.** SSEID, customer name, SC and
+> **The full drill-down needs `--mode gated`.** SSEID, customer name and
 > Installation Champion are identifying, so `public` mode omits them entirely
-> and the export degrades to the non-identifying columns, saying so on screen.
+> and the export degrades to the remaining columns, saying so on screen.
 > **Do not deploy in gated mode until the URL is behind Cloudflare Access** —
 > see [DEPLOY.md](DEPLOY.md).
+>
+> **`sc_name` is the one deliberate exception.** The City Deep Dive tab filters
+> and ranks Solar Consultants by name, so the consultant's *name* ships in the
+> public build. `sc_email` does not — a name is not a contactable identifier.
+
+---
+
+## 5d. City Deep Dive (tab 2)
+
+The same metrics as tab 1, transposed: **metrics down the side, installation
+months across the top**, for one cluster at a time.
+
+A column is a **cohort, not a calendar month**. Customers sit in the month their
+system was installed; their referrals are then counted inside *that customer's
+own* −3…+90 day window. So the newest column is always still filling, and will
+keep rising for ninety days after its last installation. It is not a month of
+referral activity.
+
+Row groups, in order:
+
+| group | rows |
+|---|---|
+| Base | Installed base, Cx Recommended *(placeholder)*, IDV visits *(placeholder)* |
+| Activation | Referrer activation, Act %, Orders activation, Order %, Not referred |
+| Referral output | # Leads, # Orders, Leads / referrer, Orders / referrer |
+| Who activated them | one row per Sub-Channel, on `activated_by_window` |
+| When they activated | one row per sub-window, on `activation_window` |
+
+The last two groups each split the activated customers exactly once, so each
+sums back to **Referrer activation**. They use the first **in-window** referral,
+not the first lifetime referral — see `activation_window` in
+[DATA_CONTRACT.md](DATA_CONTRACT.md) for why that distinction matters.
+
+Clicking a count downloads those customers. Percentages and per-referrer ratios
+are derived rather than a set of rows, so they are not clickable. As on tab 1,
+clicking **# Leads** gives the customers who produced those leads, not one row
+per lead — the export is a customer list.
+
+### Solar Consultant
+
+A customer is attributed to the consultant on **their own order**
+(`lead.assigned_sc` → `users`), which is the book that consultant handed over.
+It is **not** who chased the referral afterwards — that is the Sub-Channel, and
+the two answer different questions.
+
+- The consultant table always lists every consultant in the selected cluster, so
+  they can be ranked against each other. Selecting one narrows the
+  month-on-month table to their book alone and highlights their row.
+- Customers whose lead carries no `assigned_sc` appear as **(not assigned)**, so
+  the consultant rows still sum to the cluster total. That is ~1.5% of the base.
+- A consultant with a very small book swings wildly on percentage. Read Act %
+  next to Installed base, never alone.
 
 ---
 

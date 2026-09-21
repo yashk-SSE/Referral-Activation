@@ -462,3 +462,85 @@ table.data thead th {
 
 /* Header needs room now that labels wrap to two lines. */
 .table-wrap.centered table.data thead th { padding-top: 9px; padding-bottom: 9px; }
+
+/* ---- City Deep Dive ---------------------------------------------------- */
+.dd-head-card { padding: 14px 16px; }
+.dd-picker { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
+.dd-field { display: flex; flex-direction: column; gap: 5px; min-width: 220px; }
+.dd-field label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--text-3); font-weight: 600;
+}
+.dd-select {
+  font: inherit; font-size: 13px; color: var(--text); background: var(--surface);
+  border: 1px solid var(--border-strong); border-radius: 8px;
+  padding: 7px 10px; max-width: 340px;
+}
+.dd-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.dd-scope {
+  margin: 0 0 7px; flex: 1 1 240px; font-size: 12px; color: var(--text-2);
+}
+.dd-title { color: var(--accent); }
+
+/* ---- transposed matrix: metrics down, months across --------------------- */
+.table-wrap.matrix { max-height: 620px; }
+table.data.matrix thead th {
+  text-align: center; min-width: 76px; cursor: default; white-space: nowrap;
+}
+table.data.matrix thead th:hover { color: var(--text-3); }
+table.data.matrix td.num { text-align: center; }
+
+/* Row labels are this table's axis, so they behave like the sticky first
+   column of the cluster table -- not like the sortable headers they inherit
+   from `table.data th`. */
+table.data.matrix tbody th, table.data.matrix thead th.m-name {
+  position: sticky; left: 0; top: auto;
+  text-align: left; text-transform: none; letter-spacing: 0; white-space: nowrap;
+  background: var(--surface); cursor: default;
+}
+table.data.matrix tbody th {
+  z-index: 2; font-size: 12.5px; font-weight: 500; color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+table.data.matrix tbody th:hover { color: var(--text); }
+table.data.matrix thead th.m-name { top: 0; z-index: 4; }
+table.data.matrix th.m-sub { padding-left: 22px; font-weight: 400; color: var(--text-2); }
+table.data.matrix td.m-rate { color: var(--text-2); }
+table.data.matrix tr.m-strong th, table.data.matrix tr.m-strong td { font-weight: 650; }
+
+/* A section band, with its label pinned in the sticky column. */
+table.data.matrix tbody tr.m-section th {
+  background: var(--surface-2); color: var(--text-3); font-size: 10px;
+  text-transform: uppercase; letter-spacing: .06em; font-weight: 600;
+  padding-top: 11px; padding-bottom: 5px;
+}
+table.data.matrix tbody tr.m-section td { background: var(--surface-2); }
+table.data.matrix tbody tr.m-section:hover th,
+table.data.matrix tbody tr.m-section:hover td { background: var(--surface-2); }
+
+table.data.matrix tbody tr:hover th { background: var(--surface-2); }
+/* Last, so the Total column keeps its tint through a row hover. */
+table.data.matrix .m-total { background: var(--accent-soft); font-weight: 600; }
+table.data.matrix tbody tr:hover td.m-total { background: var(--accent-soft); }
+
+/* ---- Solar Consultant picking ------------------------------------------ */
+.sc-pick { cursor: pointer; border-bottom: 1px dotted var(--border-strong); }
+.sc-pick:hover { color: var(--accent); border-bottom-color: var(--accent); }
+table.data tbody tr.picked-row { background: var(--good-soft); }
+table.data tbody tr.picked-row:hover { background: var(--good-soft); }
+table.data tbody tr.picked-row td { border-bottom-color: var(--good); }
+.table-wrap.centered table.data tbody tr.picked-row td:first-child,
+.table-wrap.centered table.data tbody tr.picked-row:hover td:first-child {
+  background: var(--good-soft);
+}
+
+@media (max-width: 760px) {
+  .dd-field { min-width: 0; flex: 1 1 100%; }
+  .dd-select { max-width: none; width: 100%; }
+  .dd-scope { flex-basis: 100%; margin-bottom: 0; }
+  .table-wrap.matrix { max-height: 480px; }
+  table.data.matrix thead th { min-width: 66px; }
+  table.data.matrix tbody th, table.data.matrix thead th.m-name {
+    max-width: 138px; white-space: normal;
+  }
+}

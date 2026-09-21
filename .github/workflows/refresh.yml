@@ -81,7 +81,10 @@ jobs:
               sys.exit(f"Refusing to publish mode={meta['mode']} to GitHub Pages. "
                        "Only 'public' may be deployed here; gated builds need an "
                        "access-controlled host (see docs/DEPLOY.md).")
-          identifying = {'install_id', 'customer_name', 'sc_name', 'sc_email',
+          # sc_name is deliberately NOT in this set: the City Deep Dive tab
+          # ranks Solar Consultants by name, so the public build ships it.
+          # sc_email stays blocked -- a name is not a contactable identifier.
+          identifying = {'install_id', 'customer_name', 'sc_email',
                          'installation_champion', 'installation_champion_email'}
           with open('web/data/customers.json') as fh:
               shipped = set(json.load(fh)['columns'])

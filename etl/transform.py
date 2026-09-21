@@ -530,6 +530,19 @@ def build_customer_base(
     agg = agg.merge(_first_sub_channel(win, "activated_by_window"),
                     on="referrer_customer_id", how="left")
 
+    # Which window the first IN-WINDOW referral landed in. NOT the same as
+    # first_timing_bucket: a customer whose very first referral fell in the
+    # blindspot can still activate later, and first_timing_bucket then places
+    # them outside the window entirely -- so splitting activated customers by
+    # first_timing_bucket silently loses every one of them.
+    first_win = win.sort_values(
+        ["referral_ts", "referral_id"], kind="mergesort"
+    ).drop_duplicates(subset="referrer_customer_id", keep="first")
+    agg = agg.merge(
+        first_win[["referrer_customer_id", "timing_bucket"]].rename(
+            columns={"timing_bucket": "activation_window"}),
+        on="referrer_customer_id", how="left")
+
     base = base.merge(agg, left_on="customer_id", right_on="referrer_customer_id",
                       how="left").drop(columns=["referrer_customer_id"], errors="ignore")
 
@@ -547,6 +560,8 @@ def build_customer_base(
     base["referrer_activated"] = base["leads_in_window"] > 0
     base["successful_activated"] = base["orders_in_window"] > 0
     base["activated_by_window"] = base["activated_by_window"].where(
+        base["referrer_activated"], None)
+    base["activation_window"] = base["activation_window"].where(
         base["referrer_activated"], None)
     base["days_to_activation"] = (
         base["first_activation_date"] - base["first_install_date"]).dt.days

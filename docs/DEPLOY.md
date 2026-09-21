@@ -5,9 +5,17 @@
 >
 > | | `public` | `gated` |
 > |---|---|---|
-> | Aggregates, charts, city table | yes | yes |
+> | Aggregates, charts, cluster table, City Deep Dive | yes | yes |
+> | Solar Consultant **name** (filter, ranking, CSV) | yes — deliberate exception | yes |
 > | Drill-down CSV | non-identifying columns only | **full sheet** |
-> | SSEID, customer name, SC name/email, Installation Champion | **omitted** | included |
+> | SSEID, customer name, SC **email**, Installation Champion | **omitted** | included |
+>
+> The one exception is `sc_name`. The City Deep Dive tab filters and ranks Solar
+> Consultants by name, which is the point of that view, so the name ships in the
+> public build and the workflow guard allows it by name. `sc_email` stays
+> blocked: a name is not a contactable identifier. **This does put named staff
+> performance on a world-readable URL** — that was an explicit call, and Stage 3
+> is how to take it back.
 >
 > **GitHub Pages is world-readable — even from a private repo.** So the Pages
 > deployment must be `public`, and it is: the workflow builds `public` unless
@@ -15,8 +23,8 @@
 > city, state, dates, capacity and the activation fields. Without SSEID or a
 > name, that sheet is not actionable for Sales.
 >
-> The full sheet requires `gated`, and `gated` must never be published to
-> Pages. Two ways to get it to Sales:
+> The rest of the full sheet requires `gated`, and `gated` must never be
+> published to Pages. Two ways to get it to Sales:
 >
 > 1. **Google Sheets, domain-restricted** — recommended, see Stage 2. The
 >    identity columns go to a Sheet shared only with `@solarsquare.in`; Google
@@ -26,7 +34,9 @@
 >    the in-browser drill-down can carry identity too.
 >
 > The workflow refuses to publish anything but `mode=public`, and separately
-> refuses if any identifying column appears in the payload.
+> refuses if any identifying column appears in the payload — `install_id`,
+> `customer_name`, `sc_email`, `installation_champion`,
+> `installation_champion_email`.
 
 
 Two stages: GitHub Pages now, Cloudflare Access when the URL needs to stop being
