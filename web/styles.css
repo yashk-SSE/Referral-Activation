@@ -467,7 +467,10 @@ table.data thead th {
 .dd-head-card { padding: 14px 16px; }
 .dd-picker { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
 .dd-field { display: flex; flex-direction: column; gap: 5px; min-width: 220px; }
-.dd-field label {
+/* Direct child only: .ms-opt is itself a <label>, so an unscoped rule here
+   renders every consultant's name as a 10px uppercase grey caption. The filter
+   bar guards the same way, with `.filter > label`. */
+.dd-field > label, .dd-label {
   font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
   color: var(--text-3); font-weight: 600;
 }
@@ -543,4 +546,14 @@ table.data tbody tr.picked-row td { border-bottom-color: var(--good); }
   table.data.matrix tbody th, table.data.matrix thead th.m-name {
     max-width: 138px; white-space: normal;
   }
+}
+
+/* The consultant picker is the shared multi-select, not a native <select>, so
+   it needs the deep-dive field's own label styling and a wider button -- names
+   are longer than cluster names. */
+.dd-field .ms-btn { padding: 7px 26px 7px 10px; min-width: 220px; max-width: 340px; }
+.dd-field .ms-panel { width: 300px; }
+@media (max-width: 760px) {
+  .dd-field .ms-btn { min-width: 0; max-width: none; width: 100%; }
+  .dd-field .ms-panel { width: min(320px, calc(100vw - 48px)); }
 }

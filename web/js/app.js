@@ -10,24 +10,39 @@ let drilldownOn = true;
 
 /* ---------------------------------------------------------------------- */
 /* Searchable multi-select. A chip row cannot carry 131 cities, and a native
- * <select multiple> is unusable for picking a handful out of that many. */
-function buildMultiSelect(elId, col, set, label) {
-  const el = document.getElementById(elId);
-  if (!el) return;
-  if (!DS.has(col)) { el.closest('.filter').hidden = true; return; }
-
-  // Option counts make it obvious which values actually carry volume.
+ * <select multiple> is unusable for picking a handful out of that many.
+ *
+ * `options` is passed in rather than read off a column, because the deep-dive
+ * consultant picker is rebuilt on every render: it only ever offers the
+ * consultants working the cluster in view. Returns a handle so that caller can
+ * hand it a new list; the static filters just never call setOptions.
+ */
+function optionsFromColumn(col) {
+  if (!DS.has(col)) return null;
   const c = DS.cols[col];
+  // Option counts make it obvious which values actually carry volume.
   const counts = new Map();
   for (let i = 0; i < DS.n; i++) {
     const v = c.v[i];
     if (v === null || v === undefined) continue;
     counts.set(v, (counts.get(v) || 0) + 1);
   }
-  const options = c.levels
+  return c.levels
     .map((name, code) => ({ name, n: counts.get(code) || 0 }))
     .filter(o => o.n > 0)
     .sort((a, b) => b.n - a.n);
+}
+
+function buildMultiSelect(elId, options, set, label, opts) {
+  const el = document.getElementById(elId);
+  if (!el) return null;
+  opts = opts || {};
+  if (!options) {
+    const wrap = el.closest('.filter');
+    if (wrap) wrap.hidden = true;
+    return null;
+  }
+  const allLabel = opts.allLabel || 'All ' + label.toLowerCase();
 
   const btn = document.createElement('button');
   btn.type = 'button';
@@ -57,7 +72,7 @@ function buildMultiSelect(elId, col, set, label) {
   el.append(btn, panel);
 
   const syncButton = () => {
-    if (set.size === 0) btn.textContent = 'All ' + label.toLowerCase();
+    if (set.size === 0) btn.textContent = allLabel;
     else if (set.size === 1) btn.textContent = [...set][0];
     else btn.textContent = set.size + ' selected';
     btn.classList.toggle('active', set.size > 0);
@@ -103,6 +118,40 @@ function buildMultiSelect(elId, col, set, label) {
 
   el._reset = () => { set.clear(); search.value = ''; syncButton(); };
   syncButton();
+
+  return {
+    /** Swap in a new option list, dropping selections it no longer contains.
+     *
+     * Changing cluster is the case that matters: a consultant picked in Pune
+     * does not work Bengaluru, and silently keeping them selected would show an
+     * empty book with no hint why. Returns true when something was dropped. */
+    setOptions(next) {
+      // Called on every render, including the one a tick triggers. Repainting
+      // rebuilds the list's DOM, which resets its scroll position and detaches
+      // the checkboxes -- so only repaint when the options genuinely changed.
+      const same = options.length === next.length &&
+                   next.every((o, i) => options[i].name === o.name && options[i].n === o.n);
+      if (same) { syncButton(); return false; }
+      options = next;
+      let dropped = false;
+      if (set.size) {
+        const live = new Set(next.map(o => o.name));
+        for (const name of [...set]) {
+          if (!live.has(name)) { set.delete(name); dropped = true; }
+        }
+      }
+      if (!panel.hidden) {
+        const at = list.scrollTop;
+        paint();
+        list.scrollTop = at;
+      }
+      syncButton();
+      return dropped;
+    },
+    /** Selections, in the option list's own order, so labels read predictably. */
+    chosen() { return options.filter(o => set.has(o.name)).map(o => o.name); },
+    count() { return options.length; }
+  };
 }
 
 // One listener closes whichever panel is open.
@@ -171,8 +220,13 @@ function buildFilters() {
     render();
   }));
 
-  buildMultiSelect('fState', 'state', F.state, 'States');
-  buildMultiSelect('fBranch', 'branch', F.branch, 'Clusters');
+  buildMultiSelect('fState', optionsFromColumn('state'), F.state, 'States');
+  buildMultiSelect('fBranch', optionsFromColumn('branch'), F.branch, 'Clusters');
+
+  // The consultant picker starts empty and is refilled on every deep-dive
+  // render with only the consultants working the cluster in view.
+  DD.scPicker = buildMultiSelect('ddSc', [], DD.sc, 'Consultants',
+                                 { allLabel: 'All consultants' });
 
   // On a phone the full filter block is taller than the screen, so it starts
   // collapsed behind a summary showing what is actually applied.
@@ -197,24 +251,21 @@ function buildFilters() {
   // showing an empty book.
   document.getElementById('ddCluster').addEventListener('change', e => {
     DD.cluster = e.target.value;
-    DD.sc = '';
-    render();
-  });
-  document.getElementById('ddSc').addEventListener('change', e => {
-    DD.sc = e.target.value;
+    DD.sc.clear();
     render();
   });
   // Delegated, because renderTable replaces the table on every sort.
   document.getElementById('tblSc').addEventListener('click', e => {
     const hit = e.target.closest('.sc-pick');
     if (!hit) return;
-    DD.sc = DD.sc === hit.dataset.sc ? '' : hit.dataset.sc;
+    const name = hit.dataset.sc;
+    if (DD.sc.has(name)) DD.sc.delete(name); else DD.sc.add(name);
     render();
   });
 
   document.getElementById('resetFilters').addEventListener('click', () => {
     F.state.clear(); F.branch.clear();
-    DD.cluster = ''; DD.sc = '';
+    DD.cluster = ''; DD.sc.clear();
     document.querySelectorAll('.ms').forEach(el => { if (el._reset) el._reset(); });
     const [a, b] = presetRange('3m', maxDay);
     setRange(a, b, '3m');
@@ -268,7 +319,7 @@ const dot = v =>
  * play at all, this decides which slice of them the deep dive is looking at.
  * Empty string means "no narrowing", which keeps it comparable with a <select>
  * value directly. */
-const DD = { cluster: '', sc: '' };
+const DD = { cluster: '', sc: new Set(), scPicker: null };
 
 /** Repopulate a <select>, keeping the current choice when it still exists.
  *
@@ -405,22 +456,32 @@ const PANELS = {
     const hasSc = DS.has('sc_name');
     document.getElementById('ddScField').hidden = !hasSc;
     document.getElementById('cardSc').hidden = !hasSc;
-    const consultants = hasSc ? AGG.countsBy(scopeIdx, 'sc_name', '(not assigned)') : [];
-    DD.sc = hasSc
-      ? fillSelect(document.getElementById('ddSc'), consultants, DD.sc, 'All consultants')
-      : '';
-    const viewIdx = DD.sc ? AGG.pickCat(scopeIdx, 'sc_name', DD.sc, '(not assigned)') : scopeIdx;
+    // Refilled every render: the picker only ever offers consultants who
+    // actually have customers in the selected cluster and date range.
+    if (hasSc && DD.scPicker) {
+      DD.scPicker.setOptions(AGG.countsBy(scopeIdx, 'sc_name', '(not assigned)'));
+    }
+    const picked = hasSc && DD.scPicker ? DD.scPicker.chosen() : [];
+    const viewIdx = picked.length
+      ? AGG.pickCat(scopeIdx, 'sc_name', picked, '(not assigned)')
+      : scopeIdx;
 
     const where = DD.cluster || 'India';
-    const label = where + (DD.sc ? ' · ' + DD.sc : '');
+    const who = picked.length === 0 ? ''
+      : picked.length === 1 ? picked[0]
+      : picked.length + ' consultants';
+    const label = where + (who ? ' · ' + who : '');
     document.getElementById('ddTitle').textContent = label;
     document.getElementById('ddScTitle').textContent =
       DD.cluster || 'India (all clusters)';
+    const bookNote = picked.length === 1
+      ? ' &mdash; ' + escHtml(picked[0]) + '&rsquo;s book inside ' + escHtml(where)
+      : picked.length
+        ? ' &mdash; ' + picked.length + ' consultants&rsquo; books inside ' + escHtml(where)
+        : (DD.cluster ? ' &mdash; all consultants in ' + escHtml(where) : '');
     document.getElementById('ddScope').innerHTML =
       '<strong>' + fmtInt(viewIdx.length) + '</strong> customers in scope, ' +
-      'out of ' + fmtInt(idx.length) + ' matching the filters above' +
-      (DD.sc ? ' &mdash; ' + escHtml(DD.sc) + '&rsquo;s book inside ' + escHtml(where)
-             : (DD.cluster ? ' &mdash; all consultants in ' + escHtml(where) : '')) + '.';
+      'out of ' + fmtInt(idx.length) + ' matching the filters above' + bookNote + '.';
 
     const mm = AGG.monthlyMatrix(viewIdx);
     const columns = mm.months.map(t => ({ key: t.name, label: t.label, stats: t }));

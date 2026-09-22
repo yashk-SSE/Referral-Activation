@@ -347,9 +347,15 @@ A customer is attributed to the consultant on **their own order**
 It is **not** who chased the referral afterwards — that is the Sub-Channel, and
 the two answer different questions.
 
+- The picker offers **only the consultants working the selected cluster**, over
+  the current date range — not the whole 700-odd national list. Change cluster
+  and it refills; a consultant who has no customers left after a filter change
+  is dropped from the selection rather than silently showing an empty book.
+- It is a **multi-select**. Tick several and the month-on-month table aggregates
+  across those books, so two consultants can be compared against a third, or a
+  team read as one. Clicking a name in the table below toggles it too.
 - The consultant table always lists every consultant in the selected cluster, so
-  they can be ranked against each other. Selecting one narrows the
-  month-on-month table to their book alone and highlights their row.
+  they can be ranked against each other, and highlights whoever is selected.
 - Customers whose lead carries no `assigned_sc` appear as **(not assigned)**, so
   the consultant rows still sum to the cluster total. That is ~1.5% of the base.
 - A consultant with a very small book swings wildly on percentage. Read Act %

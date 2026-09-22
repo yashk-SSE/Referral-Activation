@@ -97,7 +97,9 @@ function renderTable(elId, columns, rows, opts) {
     const name = String(r.name);
     const cls = [];
     if (opts.totalRow && name === opts.totalRow) cls.push('total-row');
-    if (opts.highlight && name === opts.highlight) cls.push('picked-row');
+    // highlight is a Set when several rows can be picked at once.
+    const hl = opts.highlight;
+    if (hl && (hl instanceof Set ? hl.has(name) : name === hl)) cls.push('picked-row');
     const rowCls = cls.length ? ' class="' + cls.join(' ') + '"' : '';
     return '<tr' + rowCls + '>' + columns.map(c => {
     let v = r[c.key];

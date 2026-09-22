@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Referral Activation</title>
 <link rel="icon" type="image/png" href="sse-logo.png">
-<link rel="stylesheet" href="styles.css?v=7ab3edc2">
+<link rel="stylesheet" href="styles.css?v=6db0d125">
 </head>
 <body>
 
@@ -120,8 +120,8 @@
           <select id="ddCluster" class="dd-select"></select>
         </div>
         <div class="dd-field" id="ddScField">
-          <label for="ddSc">Solar Consultant</label>
-          <select id="ddSc" class="dd-select"></select>
+          <span class="dd-label">Solar Consultant</span>
+          <div id="ddSc" class="ms"></div>
         </div>
         <p class="dd-scope" id="ddScope"></p>
       </div>
@@ -150,9 +150,10 @@
            A customer is attributed to the consultant on their order
            (<code>lead.assigned_sc</code>), so this is the book they handed over, not
            who chased the referral afterwards.</p>
-        <p class="caveat">Pick a consultant above to narrow the month-on-month table to
-           their book alone. Consultants with a very small base swing wildly on
-           percentage &mdash; read the base column alongside the rate.</p>
+        <p class="caveat">The picker lists only the consultants working the selected
+           cluster. Tick one or several &mdash; or click a name below &mdash; to narrow
+           the month-on-month table to those books. Consultants with a very small base
+           swing wildly on percentage: read Act % alongside the base, never alone.</p>
       </div>
       <div id="tblSc" class="table-wrap scroll centered"></div>
     </div>
@@ -166,9 +167,9 @@
 
 <!-- vendored so the dashboard works behind corporate networks that block CDNs -->
 <script src="vendor/echarts.min.js?v=79a8b5a0"></script>
-<script src="js/data.js?v=86c29369"></script>
-<script src="js/charts.js?v=4508e4e0"></script>
-<script src="js/export.js?v=ba8a5e7d"></script>
-<script src="js/app.js?v=4df65313"></script>
+<script src="js/data.js?v=e6b314e1"></script>
+<script src="js/charts.js?v=ed42ee3d"></script>
+<script src="js/export.js?v=0b7f175d"></script>
+<script src="js/app.js?v=f67987d4"></script>
 </body>
 </html>

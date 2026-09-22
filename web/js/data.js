@@ -304,15 +304,25 @@ const AGG = {
       .sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
   },
 
-  /** Row indices whose value in a categorical column equals `value`. */
+  /** Row indices matching one value, or any of several, in a column. */
   pickCat(idx, col, value, fallback) {
     const c = DS.cols[col];
     if (!c) return idx;
-    const code = c.levels.indexOf(value);
+    const wanted = Array.isArray(value) ? value : [value];
+    if (!wanted.length) return idx;
+    const codes = new Set();
     // The fallback label stands for NULL, which has no level of its own.
-    if (code < 0) return value === fallback
-      ? idx.filter(i => c.v[i] === null || c.v[i] === undefined) : [];
-    return idx.filter(i => c.v[i] === code);
+    let wantNull = false;
+    for (const v of wanted) {
+      const code = c.levels.indexOf(v);
+      if (code >= 0) codes.add(code);
+      else if (v === fallback) wantNull = true;
+    }
+    if (!codes.size && !wantNull) return [];
+    return idx.filter(i => {
+      const v = c.v[i];
+      return (v === null || v === undefined) ? wantNull : codes.has(v);
+    });
   },
 
   /** One row per Solar Consultant, same metric set as the cluster table.
