@@ -195,6 +195,10 @@ function statsFor(rows, name) {
   t.not_referred = t.installed - t.referrer_activated;
   t.activation_rate = pct(t.referrer_activated, t.installed);
   t.success_rate = pct(t.successful_activated, t.installed);
+  // Leads per 100 installed customers. Unlike activation_rate this is not a
+  // share of anything -- one customer can give five referrals -- so it can and
+  // does exceed 100%.
+  t.leads_rate = pct(t.leads, t.installed);
   t.leads_per_referrer = t.referrer_activated
     ? +(t.leads / t.referrer_activated).toFixed(2) : 0;
   t.orders_per_referrer = t.referrer_activated
@@ -323,6 +327,41 @@ const AGG = {
       const v = c.v[i];
       return (v === null || v === undefined) ? wantNull : codes.has(v);
     });
+  },
+
+  /** Clusters down the side, metric groups across, each split by month.
+   *
+   * The transpose of monthlyMatrix: that one answers "how is this cluster
+   * moving", this one answers "which clusters are moving". Both come through
+   * statsFor, so they cannot disagree.
+   */
+  momByCluster(idx, dim) {
+    const mcol = DS.cols.cohort_month;
+    const keys = new Set();
+    if (mcol) {
+      for (const i of idx) {
+        const v = mcol.v[i];
+        if (v !== null && v !== undefined) keys.add(mcol.levels[v]);
+      }
+    }
+    const monthKeys = [...keys].sort();
+    const months = monthKeys.map(k => ({ key: k, label: monthLabel(k) }));
+
+    const build = (name, rows) => {
+      const byMonth = groupRows(rows, 'cohort_month', '(none)');
+      return {
+        name,
+        cells: monthKeys.map(k => statsFor(byMonth.get(k) || [], name)),
+        total: statsFor(rows, name)
+      };
+    };
+    // India first and pinned; the rest by size, as on the cluster table.
+    const out = [build('India (all)', idx)];
+    for (const [key, rows] of [...groupRows(idx, dim || 'branch').entries()]
+        .sort((a, b) => b[1].length - a[1].length)) {
+      out.push(build(key, rows));
+    }
+    return { months, rows: out };
   },
 
   /** One row per Solar Consultant, same metric set as the cluster table.

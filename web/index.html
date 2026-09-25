@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Referral Activation</title>
 <link rel="icon" type="image/png" href="sse-logo.png">
-<link rel="stylesheet" href="styles.css?v=6db0d125">
+<link rel="stylesheet" href="styles.css?v=4f8a28c5">
 </head>
 <body>
 
@@ -73,6 +73,7 @@
   <nav class="tabs" role="tablist">
     <button role="tab" class="tab active" data-tab="sales">Referrer Activation</button>
     <button role="tab" class="tab" data-tab="deepdive">City Deep Dive</button>
+    <button role="tab" class="tab" data-tab="mom">MoM by Cluster</button>
   </nav>
 
   <!-- ---------------------------------------------------------------- -->
@@ -159,6 +160,40 @@
     </div>
   </section>
 
+  <!-- ---------------------------------------------------------------- -->
+  <section class="panel" data-panel="mom" hidden>
+    <div class="card wide">
+      <div class="card-head">
+        <h2>Customer activation &mdash; month on month</h2>
+        <p>Every cluster by <strong>installation month</strong>, with an India row on
+           top. A customer counts <strong>once</strong>, in the month their system was
+           installed, if they gave at least one referral inside their own activation
+           window.</p>
+        <p class="caveat">A column is a cohort, not a calendar month of referrals, so
+           the newest months keep rising for ninety days after their last installation.
+           IDV Visits is a placeholder and renders as a dash until a source is wired up.
+           <strong>Click any count to download those customers.</strong></p>
+      </div>
+      <div id="tblMomCustomer" class="table-wrap scroll grouped-wrap"></div>
+      <p class="finding" id="momCustomerFinding"></p>
+    </div>
+
+    <div class="card wide">
+      <div class="card-head">
+        <h2>Lead activation &mdash; month on month</h2>
+        <p>The same grid counted in <strong>referral leads</strong> rather than
+           customers. One customer who referred three people is 1 above and 3 here, so
+           this is the volume view where the table above is the coverage view.</p>
+        <p class="caveat"><em>Leads %</em> is leads &divide; installed base. It is not a
+           share of anything &mdash; a single customer can give five referrals &mdash;
+           so it can exceed 100%. Downloads give the <strong>customers</strong> behind
+           those leads, not one row per lead.</p>
+      </div>
+      <div id="tblMomLead" class="table-wrap scroll grouped-wrap"></div>
+      <p class="finding" id="momLeadFinding"></p>
+    </div>
+  </section>
+
   <footer class="foot">
     <span id="footMeta"></span>
     <span id="footWarn" class="warn"></span>
@@ -167,9 +202,9 @@
 
 <!-- vendored so the dashboard works behind corporate networks that block CDNs -->
 <script src="vendor/echarts.min.js?v=79a8b5a0"></script>
-<script src="js/data.js?v=e6b314e1"></script>
-<script src="js/charts.js?v=ed42ee3d"></script>
+<script src="js/data.js?v=ced044a5"></script>
+<script src="js/charts.js?v=dc30feb7"></script>
 <script src="js/export.js?v=0b7f175d"></script>
-<script src="js/app.js?v=f67987d4"></script>
+<script src="js/app.js?v=e4c4ea36"></script>
 </body>
 </html>

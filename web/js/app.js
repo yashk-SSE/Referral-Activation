@@ -444,6 +444,49 @@ const PANELS = {
     ], mix.tat, { sortKey: 'n' });
   },
 
+  /* Every cluster at once, month by month -- the transpose of the deep dive.
+   *
+   * Two grids of the same shape: the first counts CUSTOMERS who activated, the
+   * second counts the LEADS they gave. One customer who referred three people
+   * is 1 in the first and 3 in the second, which is the whole reason they are
+   * separate tables rather than two columns of one.
+   */
+  mom(idx) {
+    const data = AGG.momByCluster(idx, 'branch');
+    const base = [
+      { label: 'Installed base', get: t => t.installed, metric: 'installed' },
+      { label: 'IDV Visits', get: t => t.idv, metric: 'idv' }
+    ];
+    const common = { drilldown: drilldownOn, totalRow: 'India (all)', rowLabel: 'Cluster' };
+
+    renderGroupedMatrix('tblMomCustomer', base.concat([
+      { label: 'Referrer Act', get: t => t.referrer_activated, metric: 'referrer_activated' },
+      { label: 'Act %', get: t => t.activation_rate, fmt: fmtPct }
+    ]), data, common);
+
+    renderGroupedMatrix('tblMomLead', base.concat([
+      { label: '# Leads', get: t => t.leads, metric: 'leads' },
+      { label: 'Leads %', get: t => t.leads_rate, fmt: fmtPct }
+    ]), data, common);
+
+    const india = data.rows[0];
+    if (!india) return;
+    const t = india.total;
+    const span = data.months.length
+      ? data.months[0].label + (data.months.length > 1
+          ? ' to ' + data.months[data.months.length - 1].label : '')
+      : '';
+    document.getElementById('momCustomerFinding').innerHTML =
+      '<strong>' + fmtInt(t.referrer_activated) + '</strong> of ' + fmtInt(t.installed) +
+      ' customers installed ' + span + ' activated (' + fmtPct(t.activation_rate) +
+      '), across <strong>' + fmtInt(data.rows.length - 1) + '</strong> clusters.';
+    document.getElementById('momLeadFinding').innerHTML =
+      'They gave <strong>' + fmtInt(t.leads) + '</strong> referral leads &mdash; ' +
+      fmtPct(t.leads_rate) + ' of the installed base, or ' +
+      (t.referrer_activated ? (t.leads / t.referrer_activated).toFixed(2) : '0') +
+      ' per activated customer.';
+  },
+
   /* One cluster, every metric, month by month -- and who on the ground owns it. */
   deepdive(idx) {
     const clusters = AGG.countsBy(idx, 'branch');

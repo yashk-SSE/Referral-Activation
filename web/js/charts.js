@@ -225,3 +225,75 @@ function renderMatrix(elId, metrics, columns, opts) {
     }));
   }
 }
+
+/* ---------------------------------------------------------------------- */
+/* grouped matrix: clusters down, metric groups across, months inside each   */
+/* ---------------------------------------------------------------------- */
+/* A two-level header -- group names spanning their months, then the months
+ * themselves, with a period Total closing each group. Deliberately not
+ * sortable: the month order carries the meaning, and the India row has to stay
+ * pinned at the top where it can be read against everything below it.
+ *
+ * `groups` entries are { label, get(stats), fmt?, metric? }.
+ * `data` is AGG.momByCluster()'s { months, rows }.
+ */
+function renderGroupedMatrix(elId, groups, data, opts) {
+  const el = document.getElementById(elId);
+  if (!el) { console.warn('renderGroupedMatrix: no element #' + elId); return; }
+  opts = opts || {};
+  const months = (data && data.months) || [];
+  if (!months.length || !data.rows.length) {
+    el.innerHTML = '<p class="muted">Nothing in range.</p>';
+    return;
+  }
+  const span = months.length + 1;                 // the months, plus Total
+
+  const alt = i => (i % 2 ? ' g-alt' : '');
+  const head =
+    '<tr><th class="g-name" rowspan="2">' + escHtml(opts.rowLabel || 'Cluster') + '</th>' +
+    groups.map((g, i) =>
+      `<th class="g-head${alt(i)}" colspan="${span}">${escHtml(g.label)}</th>`).join('') +
+    '</tr><tr>' +
+    groups.map((g, i) =>
+      months.map(m => `<th class="num g-sub${alt(i)}">${escHtml(m.label)}</th>`).join('') +
+      '<th class="num g-sub g-total">Total</th>').join('') +
+    '</tr>';
+
+  const body = data.rows.map((r, ri) => {
+    const cell = (g, gi, stats, mi) => {
+      const v = g.get(stats);
+      const text = (v === null || v === undefined) ? '—' : (g.fmt ? g.fmt(v) : fmtInt(v));
+      let cls = 'num' + alt(gi) + (mi < 0 ? ' g-total' : '');
+      const drill = opts.drilldown && g.metric && typeof v === 'number' && v > 0;
+      if (drill) cls += ' drill';
+      // Addressed by index rather than by name: month keys and cluster names
+      // both come from the warehouse and neither is safe to round-trip.
+      const attrs = drill
+        ? ` data-metric="${escAttr(g.metric)}" data-ri="${ri}" data-mi="${mi}"` : '';
+      return `<td class="${cls}"${attrs}>${text}</td>`;
+    };
+    const cells = groups.map((g, gi) =>
+      r.cells.map((s, mi) => cell(g, gi, s, mi)).join('') + cell(g, gi, r.total, -1)
+    ).join('');
+    const cls = r.name === opts.totalRow ? ' class="total-row"' : '';
+    return `<tr${cls}><th class="g-name">${escHtml(r.name)}</th>${cells}</tr>`;
+  }).join('');
+
+  el.innerHTML = `<table class="data grouped"><thead>${head}</thead><tbody>${body}</tbody></table>`;
+
+  if (opts.drilldown) {
+    el.querySelectorAll('td.drill').forEach(td => td.addEventListener('click', () => {
+      const r = data.rows[+td.dataset.ri];
+      const mi = +td.dataset.mi;
+      const stats = mi < 0 ? r.total : r.cells[mi];
+      if (!stats || !stats.rows) return;
+      const when = mi < 0 ? 'total' : months[mi].label;
+      const picked = rowsForMetric(stats.rows, td.dataset.metric);
+      const file = downloadCustomers(picked, [r.name, when, td.dataset.metric]);
+      if (file) {
+        td.classList.add('drilled');
+        setTimeout(() => td.classList.remove('drilled'), 900);
+      }
+    }));
+  }
+}

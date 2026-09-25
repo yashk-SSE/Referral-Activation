@@ -142,12 +142,13 @@ Set with `--mode gated` locally, or the `mode` input on a manual workflow run.
 
 ---
 
-## The two tabs
+## The three tabs
 
 | tab | question it answers |
 |---|---|
 | **Referrer Activation** | The Sales-facing view: per-cluster activation inside the −3…+90 day window, with an India total, plus who activated them and how long it took. Click any number to download that list of customers |
 | **City Deep Dive** | One cluster at a time, every metric transposed into a month-on-month grid — metrics down the side, installation months across the top — including the Sub-Channel and sub-window splits. Filter to a single **Solar Consultant** to see their own book: installed base, what activated from it, and how they rank against the others in the cluster |
+| **MoM by Cluster** | Every cluster at once, month by month, as two grids of the same shape: **Customer activation** counts customers who referred, **Lead activation** counts the leads they gave. India pinned on top as the benchmark |
 
 Full definitions for every term are in
 **[docs/DEFINITIONS.md](docs/DEFINITIONS.md)**.

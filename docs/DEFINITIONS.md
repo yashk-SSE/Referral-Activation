@@ -363,6 +363,36 @@ the two answer different questions.
 
 ---
 
+## 5e. MoM by Cluster (tab 3)
+
+The transpose of the City Deep Dive: **every cluster down the side, metric
+groups across the top, each group split by installation month** with a period
+Total closing it. An India row is pinned under the header as the benchmark.
+
+Two grids of identical shape, and the difference between them is the unit:
+
+| grid | counts | rate shown |
+|---|---|---|
+| **Customer activation** | **customers** who gave ≥1 referral in their own window | Act % = activated ÷ installed base |
+| **Lead activation** | the **referral leads** those customers gave | Leads % = leads ÷ installed base |
+
+One customer who referred three people is **1** on the first grid and **3** on
+the second. That is the whole reason they are separate tables rather than two
+more columns on one: coverage and volume are different questions, and a single
+heavy referrer can carry a cluster's lead count while its coverage stays flat.
+
+**Leads % is not a share of anything** and can exceed 100% — there is no ceiling
+on how many people one customer refers. Read it as leads per 100 installed
+customers.
+
+Both grids and the Referrer Activation table come through the same
+`statsFor()`, so a cluster's Total here always equals its row on tab 1, and its
+month columns always sum to that Total. Clicking any count downloads the
+**customers** behind it — including on the Lead grid, where the 1,075 leads in a
+cell are given by 573 customers and the download is those 573.
+
+---
+
 ## 6. Referral timing
 
 Measured for each referrer's **first** referral, relative to **their own**

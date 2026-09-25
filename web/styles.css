@@ -557,3 +557,67 @@ table.data tbody tr.picked-row td { border-bottom-color: var(--good); }
   .dd-field .ms-btn { min-width: 0; max-width: none; width: 100%; }
   .dd-field .ms-panel { width: min(320px, calc(100vw - 48px)); }
 }
+
+/* ---- MoM by Cluster: grouped two-level header -------------------------- */
+.table-wrap.grouped-wrap { max-height: 640px; }
+table.data.grouped { border-collapse: separate; border-spacing: 0; }
+table.data.grouped th, table.data.grouped td {
+  border-bottom: 1px solid var(--border);
+}
+/* Two sticky header rows. Heights are fixed because the second row's `top`
+   has to equal the first row's height, and a wrapped label would break it. */
+table.data.grouped thead th.g-head {
+  position: sticky; top: 0; height: 26px; z-index: 3;
+  text-align: center; white-space: nowrap; cursor: default;
+  border-bottom: 1px solid var(--border-strong);
+}
+table.data.grouped thead th.g-sub {
+  position: sticky; top: 26px; height: 26px; z-index: 3;
+  text-align: center; white-space: nowrap; cursor: default; min-width: 62px;
+}
+table.data.grouped thead th:hover { color: var(--text-3); }
+
+/* Cluster name: sticky column, and the corner outranks both header rows. */
+table.data.grouped th.g-name {
+  position: sticky; left: 0; z-index: 2;
+  text-align: left; text-transform: none; letter-spacing: 0; white-space: nowrap;
+  font-size: 12.5px; font-weight: 500; color: var(--text);
+  background: var(--surface); cursor: default; min-width: 122px;
+}
+table.data.grouped thead th.g-name { top: 0; z-index: 5; height: 52px; }
+table.data.grouped tbody th.g-name:hover { color: var(--text); }
+table.data.grouped tbody tr:hover th.g-name { background: var(--surface-2); }
+
+/* Alternate a faint tint per metric group so the eye can find the boundary
+   across a grid that is mostly numbers. */
+table.data.grouped .g-alt { background: var(--surface-2); }
+table.data.grouped thead th.g-head { background: var(--surface); }
+table.data.grouped thead th.g-head.g-alt,
+table.data.grouped thead th.g-sub.g-alt { background: var(--surface-2); }
+table.data.grouped .g-total { background: var(--accent-soft); font-weight: 600; }
+table.data.grouped tbody tr:hover td.g-total { background: var(--accent-soft); }
+table.data.grouped tbody tr.total-row th.g-name,
+table.data.grouped tbody tr.total-row:hover th.g-name { background: var(--accent-soft); }
+table.data.grouped td { text-align: center; }
+
+@media (max-width: 760px) {
+  .table-wrap.grouped-wrap { max-height: 500px; }
+  table.data.grouped th.g-name { min-width: 96px; max-width: 120px; white-space: normal; }
+  table.data.grouped thead th.g-sub { min-width: 54px; }
+}
+
+/* Pin the India row directly under the two header rows: it is the benchmark
+   every cluster below is read against, and it scrolls out of view by row 12
+   otherwise. 52px = the two 26px header rows. Layering, highest first:
+   header corner (5) > header rows (3) > India name cell (4, so it beats the
+   header rows on the horizontal axis) > India cells (1) > body (0). */
+table.data.grouped tbody tr.total-row th,
+table.data.grouped tbody tr.total-row td {
+  position: sticky; top: 52px; z-index: 1;
+  border-bottom: 2px solid var(--accent);
+}
+table.data.grouped tbody tr.total-row th.g-name { z-index: 4; }
+/* Opaque, or the rows scrolling beneath show through. */
+table.data.grouped tbody tr.total-row td { background: var(--surface); }
+table.data.grouped tbody tr.total-row td.g-alt { background: var(--surface-2); }
+table.data.grouped tbody tr.total-row td.g-total { background: var(--accent-soft); }
