@@ -145,7 +145,9 @@ let LIVE = null;
 function liveFlags() {
   if (LIVE) return LIVE;
   const any = c => !!(c && c.v.some(x => x !== null && x !== undefined));
-  return (LIVE = { rec: any(DS.cols.cx_recommended), idv: any(DS.cols.idv_done) });
+  return (LIVE = { rec: any(DS.cols.cx_recommended),
+                   idv: any(DS.cols.idv_done),
+                   idvSched: any(DS.cols.idv_scheduled) });
 }
 
 /** Every activation metric, over one set of row indices.
@@ -160,6 +162,7 @@ function statsFor(rows, name) {
   const act = DS.cols.referrer_activated, suc = DS.cols.successful_activated;
   const lw = DS.cols.leads_in_window, ow = DS.cols.orders_in_window;
   const rec = DS.cols.cx_recommended, idv = DS.cols.idv_done;
+  const idvs = DS.cols.idv_scheduled;
   const scol = DS.cols.activated_by_window, wcol = DS.cols.activation_window;
 
   const t = {
@@ -169,6 +172,7 @@ function statsFor(rows, name) {
     // recommended us" and "we are not measuring it yet" are different claims.
     cx_recommended: live.rec ? 0 : null,
     idv: live.idv ? 0 : null,
+    idv_scheduled: live.idvSched ? 0 : null,
     referrer_activated: 0, successful_activated: 0, leads: 0, orders: 0,
     bySubChannel: {}, byWindow: {}
   };
@@ -190,6 +194,7 @@ function statsFor(rows, name) {
       t.orders += (ow && ow.v[i]) || 0;
       if (live.rec && rec.v[i]) t.cx_recommended++;
       if (live.idv && idv.v[i]) t.idv++;
+      if (live.idvSched && idvs.v[i]) t.idv_scheduled++;
     }
   }
   t.not_referred = t.installed - t.referrer_activated;

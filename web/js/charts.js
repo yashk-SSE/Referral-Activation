@@ -242,20 +242,31 @@ function renderGroupedMatrix(elId, groups, data, opts) {
   if (!el) { console.warn('renderGroupedMatrix: no element #' + elId); return; }
   opts = opts || {};
   const months = (data && data.months) || [];
-  if (!months.length || !data.rows.length) {
-    el.innerHTML = '<p class="muted">Nothing in range.</p>';
+  const hidden = opts.hidden || new Set();
+  const collapsed = opts.collapsed || new Set();
+  const shown = groups.filter(g => !hidden.has(g.key));
+  if (!months.length || !data.rows.length || !shown.length) {
+    el.innerHTML = '<p class="muted">' +
+      (shown.length ? 'Nothing in range.' : 'Every column is switched off.') + '</p>';
     return;
   }
-  const span = months.length + 1;                 // the months, plus Total
+  // A collapsed group keeps its header but folds the months away, leaving only
+  // the period Total -- which is what you want for a column that is all dashes.
+  const isOpen = g => !collapsed.has(g.key);
+  const span = g => (isOpen(g) ? months.length : 0) + 1;
 
   const alt = i => (i % 2 ? ' g-alt' : '');
   const head =
     '<tr><th class="g-name" rowspan="2">' + escHtml(opts.rowLabel || 'Cluster') + '</th>' +
-    groups.map((g, i) =>
-      `<th class="g-head${alt(i)}" colspan="${span}">${escHtml(g.label)}</th>`).join('') +
+    shown.map((g, i) =>
+      `<th class="g-head${alt(i)}${isOpen(g) ? '' : ' g-closed'}" colspan="${span(g)}"` +
+      ` data-group="${escAttr(g.key)}" title="Click to ${isOpen(g) ? 'collapse' : 'expand'} the months">` +
+      `${escHtml(g.label)}<span class="g-chev">${isOpen(g) ? '‹›' : '›‹'}</span></th>`).join('') +
     '</tr><tr>' +
-    groups.map((g, i) =>
-      months.map(m => `<th class="num g-sub${alt(i)}">${escHtml(m.label)}</th>`).join('') +
+    shown.map((g, i) =>
+      (isOpen(g)
+        ? months.map(m => `<th class="num g-sub${alt(i)}">${escHtml(m.label)}</th>`).join('')
+        : '') +
       '<th class="num g-sub g-total">Total</th>').join('') +
     '</tr>';
 
@@ -272,14 +283,20 @@ function renderGroupedMatrix(elId, groups, data, opts) {
         ? ` data-metric="${escAttr(g.metric)}" data-ri="${ri}" data-mi="${mi}"` : '';
       return `<td class="${cls}"${attrs}>${text}</td>`;
     };
-    const cells = groups.map((g, gi) =>
-      r.cells.map((s, mi) => cell(g, gi, s, mi)).join('') + cell(g, gi, r.total, -1)
+    const cells = shown.map((g, gi) =>
+      (isOpen(g) ? r.cells.map((st, mi) => cell(g, gi, st, mi)).join('') : '') +
+      cell(g, gi, r.total, -1)
     ).join('');
     const cls = r.name === opts.totalRow ? ' class="total-row"' : '';
     return `<tr${cls}><th class="g-name">${escHtml(r.name)}</th>${cells}</tr>`;
   }).join('');
 
   el.innerHTML = `<table class="data grouped"><thead>${head}</thead><tbody>${body}</tbody></table>`;
+
+  if (opts.onToggleGroup) {
+    el.querySelectorAll('thead th.g-head').forEach(th =>
+      th.addEventListener('click', () => opts.onToggleGroup(th.dataset.group)));
+  }
 
   if (opts.drilldown) {
     el.querySelectorAll('td.drill').forEach(td => td.addEventListener('click', () => {

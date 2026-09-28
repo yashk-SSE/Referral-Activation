@@ -369,27 +369,42 @@ The transpose of the City Deep Dive: **every cluster down the side, metric
 groups across the top, each group split by installation month** with a period
 Total closing it. An India row is pinned under the header as the benchmark.
 
-Two grids of identical shape, and the difference between them is the unit:
+Seven groups: Installed Base, IDV Scheduled, IDV Done, Referrer Activation,
+Successful Referrer, # of Leads, # of Orders.
 
-| grid | counts | rate shown |
-|---|---|---|
-| **Customer activation** | **customers** who gave ≥1 referral in their own window | Act % = activated ÷ installed base |
-| **Lead activation** | the **referral leads** those customers gave | Leads % = leads ÷ installed base |
+### Both rates are on the installed base
 
-One customer who referred three people is **1** on the first grid and **3** on
-the second. That is the whole reason they are separate tables rather than two
-more columns on one: coverage and volume are different questions, and a single
-heavy referrer can carry a cluster's lead count while its coverage stays flat.
+**Referrer Activation** and **Successful Referrer** are shares of the
+**installed base**, not of each other and not of the referrer count:
 
-**Leads % is not a share of anything** and can exceed 100% — there is no ceiling
-on how many people one customer refers. Read it as leads per 100 installed
-customers.
+    Referrer Activation %  = customers who referred in-window / installed base
+    Successful Referrer %  = customers whose referral became an order / installed base
 
-Both grids and the Referrer Activation table come through the same
-`statsFor()`, so a cluster's Total here always equals its row on tab 1, and its
-month columns always sum to that Total. Clicking any count downloads the
-**customers** behind it — including on the Lead grid, where the 1,075 leads in a
-cell are given by 573 customers and the download is those 573.
+So Successful Referrer is a subset of Referrer Activation, and both denominators
+are the same. The **%/#** switch above the table changes only how that number is
+printed -- 16.5% and 614 are the same figure over the same 3,716 installs. It
+never changes the denominator, and it never changes which customers are counted.
+
+### Folding and hiding
+
+Two separate controls, easy to confuse:
+
+- **Clicking a column heading folds it**, leaving only the period Total and
+  taking the months away. IDV Scheduled and IDV Done start folded, because
+  neither has a source wired up and four columns of dashes earn nothing.
+- **The chips above the table show or hide a group entirely.** *Reset columns*
+  brings all seven back and re-folds the two IDV groups.
+
+Neither control changes any number; they only change what is on screen.
+
+### Reconciliation
+
+Every group comes through the same `statsFor()` as the Referrer Activation table
+and the deep-dive matrix, so a cluster's Total here equals its row on tab 1, and
+its month columns sum to that Total -- asserted across all 33 clusters for
+installs, activation, successful referrers, leads and orders. Clicking any count
+downloads the customers behind it; percentages are derived and so are not
+clickable.
 
 ---
 

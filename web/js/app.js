@@ -263,6 +263,36 @@ function buildFilters() {
     render();
   });
 
+  // --- MoM by Cluster controls ------------------------------------------
+  // The %/# switch and the column chips both live above the table rather than
+  // inside it: they change how every column reads, so they cannot sit in one.
+  document.querySelectorAll('#momUnit button').forEach(btn =>
+    btn.addEventListener('click', () => {
+      MOM.asPct = btn.dataset.unit === 'pct';
+      document.querySelectorAll('#momUnit button').forEach(b =>
+        b.classList.toggle('on', b === btn));
+      render();
+    }));
+
+  const chips = document.getElementById('momCols');
+  chips.innerHTML = MOM_GROUPS.map(g =>
+    '<button type="button" class="chip on" data-key="' + escAttr(g.key) + '">' +
+    escHtml(g.label) + '</button>').join('');
+  chips.addEventListener('click', e => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    const key = chip.dataset.key;
+    if (MOM.hidden.has(key)) MOM.hidden.delete(key); else MOM.hidden.add(key);
+    chip.classList.toggle('on', !MOM.hidden.has(key));
+    render();
+  });
+  document.getElementById('momAll').addEventListener('click', () => {
+    MOM.hidden.clear();
+    MOM.collapsed = new Set(['idv_sched', 'idv_done']);
+    chips.querySelectorAll('.chip').forEach(c => c.classList.add('on'));
+    render();
+  });
+
   document.getElementById('resetFilters').addEventListener('click', () => {
     F.state.clear(); F.branch.clear();
     DD.cluster = ''; DD.sc.clear();
@@ -375,6 +405,47 @@ function matrixRows() {
 }
 
 /* ---------------------------------------------------------------------- */
+/* MoM by Cluster: which columns are showing, folded, and how rates print.
+ *
+ * IDV starts folded because it has no source wired up yet -- the column should
+ * be visible as a column without spending four cells on dashes. */
+const MOM = {
+  asPct: true,
+  hidden: new Set(),
+  collapsed: new Set(['idv_sched', 'idv_done'])
+};
+
+const MOM_GROUPS = [
+  { key: 'installed', label: 'Installed Base' },
+  { key: 'idv_sched', label: 'IDV Scheduled' },
+  { key: 'idv_done', label: 'IDV Done' },
+  { key: 'act', label: 'Referrer Activation' },
+  { key: 'succ', label: 'Successful Referrer' },
+  { key: 'leads', label: '# of Leads' },
+  { key: 'orders', label: '# of Orders' }
+];
+
+function momGroups() {
+  // Both rates are a share of the INSTALLED BASE, not of each other and not of
+  // the referrer count -- the switch changes the printing, never the maths.
+  const rate = MOM.asPct;
+  const num = v => (rate ? fmtPct(v) : fmtInt(v));
+  return [
+    { key: 'installed', label: 'Installed Base', get: t => t.installed, metric: 'installed' },
+    { key: 'idv_sched', label: 'IDV Scheduled', get: t => t.idv_scheduled, metric: 'idv_scheduled' },
+    { key: 'idv_done', label: 'IDV Done', get: t => t.idv, metric: 'idv' },
+    { key: 'act', label: 'Referrer Activation' + (rate ? ' %' : ' #'),
+      get: t => (rate ? t.activation_rate : t.referrer_activated),
+      fmt: num, metric: 'referrer_activated' },
+    { key: 'succ', label: 'Successful Referrer' + (rate ? ' %' : ' #'),
+      get: t => (rate ? t.success_rate : t.successful_activated),
+      fmt: num, metric: 'successful_activated' },
+    { key: 'leads', label: '# of Leads', get: t => t.leads, metric: 'leads' },
+    { key: 'orders', label: '# of Orders', get: t => t.orders, metric: 'orders' }
+  ];
+}
+
+/* ---------------------------------------------------------------------- */
 const PANELS = {
 
   sales(idx, s) {
@@ -446,28 +517,21 @@ const PANELS = {
 
   /* Every cluster at once, month by month -- the transpose of the deep dive.
    *
-   * Two grids of the same shape: the first counts CUSTOMERS who activated, the
-   * second counts the LEADS they gave. One customer who referred three people
-   * is 1 in the first and 3 in the second, which is the whole reason they are
-   * separate tables rather than two columns of one.
+   * One grid, seven metric groups, each unfolding into the months in view.
+   * Referrer Activation and Successful Referrer are both measured against the
+   * INSTALLED BASE, and the %/# switch only changes how that same number is
+   * printed -- it never changes the denominator.
    */
   mom(idx) {
     const data = AGG.momByCluster(idx, 'branch');
-    const base = [
-      { label: 'Installed base', get: t => t.installed, metric: 'installed' },
-      { label: 'IDV Visits', get: t => t.idv, metric: 'idv' }
-    ];
-    const common = { drilldown: drilldownOn, totalRow: 'India (all)', rowLabel: 'Cluster' };
-
-    renderGroupedMatrix('tblMomCustomer', base.concat([
-      { label: 'Referrer Act', get: t => t.referrer_activated, metric: 'referrer_activated' },
-      { label: 'Act %', get: t => t.activation_rate, fmt: fmtPct }
-    ]), data, common);
-
-    renderGroupedMatrix('tblMomLead', base.concat([
-      { label: '# Leads', get: t => t.leads, metric: 'leads' },
-      { label: 'Leads %', get: t => t.leads_rate, fmt: fmtPct }
-    ]), data, common);
+    renderGroupedMatrix('tblMom', momGroups(), data, {
+      drilldown: drilldownOn, totalRow: 'India (all)', rowLabel: 'Cluster',
+      hidden: MOM.hidden, collapsed: MOM.collapsed,
+      onToggleGroup: key => {
+        if (MOM.collapsed.has(key)) MOM.collapsed.delete(key); else MOM.collapsed.add(key);
+        render();
+      }
+    });
 
     const india = data.rows[0];
     if (!india) return;
@@ -476,15 +540,13 @@ const PANELS = {
       ? data.months[0].label + (data.months.length > 1
           ? ' to ' + data.months[data.months.length - 1].label : '')
       : '';
-    document.getElementById('momCustomerFinding').innerHTML =
+    document.getElementById('momFinding').innerHTML =
       '<strong>' + fmtInt(t.referrer_activated) + '</strong> of ' + fmtInt(t.installed) +
-      ' customers installed ' + span + ' activated (' + fmtPct(t.activation_rate) +
-      '), across <strong>' + fmtInt(data.rows.length - 1) + '</strong> clusters.';
-    document.getElementById('momLeadFinding').innerHTML =
-      'They gave <strong>' + fmtInt(t.leads) + '</strong> referral leads &mdash; ' +
-      fmtPct(t.leads_rate) + ' of the installed base, or ' +
-      (t.referrer_activated ? (t.leads / t.referrer_activated).toFixed(2) : '0') +
-      ' per activated customer.';
+      ' customers installed ' + span + ' became referrers (' + fmtPct(t.activation_rate) +
+      '), <strong>' + fmtInt(t.successful_activated) + '</strong> of them successfully (' +
+      fmtPct(t.success_rate) + '), giving ' + fmtInt(t.leads) + ' leads and ' +
+      fmtInt(t.orders) + ' orders across <strong>' + fmtInt(data.rows.length - 1) +
+      '</strong> clusters.';
   },
 
   /* One cluster, every metric, month by month -- and who on the ground owns it. */
