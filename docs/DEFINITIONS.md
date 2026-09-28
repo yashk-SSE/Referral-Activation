@@ -188,8 +188,8 @@ Configured in `etl/funnel_config.json`.
 The window is no longer baked into the build. The ETL ships **every referral's
 day-offset from its own customer's installation** (56k of them, ~0.4 MB) and the
 dashboard re-derives activation, leads, orders, the Sub-Channel split and the
-sub-window buckets for whatever range is selected. Presets run −3…+3 through
-−3…+365, plus a custom pair of day numbers.
+sub-window buckets for whatever range is selected. A dropdown in the filter bar runs −3…+3
+through −3…+365, with **Custom…** revealing a pair of day inputs.
 
 A non-default window is stamped in the **top bar** and written as the first line
 of **every CSV export**, because it changes what every number on the page means.

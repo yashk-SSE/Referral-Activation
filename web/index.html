@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Referral Activation</title>
 <link rel="icon" type="image/png" href="sse-logo.png">
-<link rel="stylesheet" href="styles.css?v=ce686bba">
+<link rel="stylesheet" href="styles.css?v=0a8d132e">
 </head>
 <body>
 
@@ -40,44 +40,50 @@
 
   <section class="filters collapsed" aria-label="Filters">
     <div class="filter">
-      <label>Installation date</label>
-      <div class="presets" id="datePresets">
-        <button type="button" data-preset="7d">Last 7 days</button>
-        <button type="button" data-preset="tm">This month</button>
-        <button type="button" data-preset="pm">Previous month</button>
-        <button type="button" data-preset="3m" class="on">Last 3 months</button>
-        <button type="button" data-preset="6m">Last 6 months</button>
-        <button type="button" data-preset="all">All</button>
+      <label for="datePreset">Installation date</label>
+      <select id="datePreset" class="f-select">
+        <option value="7d">Last 7 days</option>
+        <option value="tm">This month</option>
+        <option value="pm">Previous month</option>
+        <option value="3m" selected>Last 3 months</option>
+        <option value="6m">Last 6 months</option>
+        <option value="all">All time</option>
+        <option value="custom">Custom&hellip;</option>
+      </select>
+    </div>
+    <div class="filter" id="dateCustom" hidden>
+      <label for="fFrom">From &ndash; to</label>
+      <div class="range">
+        <input type="date" id="fFrom" class="date-input">
+        <input type="date" id="fTo" class="date-input">
       </div>
     </div>
+
     <div class="filter">
-      <label for="fFrom">From</label>
-      <input type="date" id="fFrom" class="date-input">
+      <label for="winPreset">Activation window</label>
+      <select id="winPreset" class="f-select">
+        <option value="-3,3">&minus;3 to +3 days</option>
+        <option value="-3,10">&minus;3 to +10 days</option>
+        <option value="-3,30">&minus;3 to +30 days</option>
+        <option value="-3,90" selected>&minus;3 to +90 days</option>
+        <option value="-3,365">&minus;3 to +365 days</option>
+        <option value="custom">Custom&hellip;</option>
+      </select>
     </div>
     <div class="filter">
-      <label for="fTo">To</label>
-      <input type="date" id="fTo" class="date-input">
-    </div>
-    <div class="filter">
-      <label>Activation window</label>
-      <div class="presets" id="winPresets">
-        <button type="button" data-win="-3,3">&minus;3 to +3</button>
-        <button type="button" data-win="-3,10">&minus;3 to +10</button>
-        <button type="button" data-win="-3,30">&minus;3 to +30</button>
-        <button type="button" data-win="-3,90" class="on">&minus;3 to +90</button>
-        <button type="button" data-win="-3,365">&minus;3 to +365</button>
-      </div>
-      <div class="win-custom">
-        <input type="number" id="winFrom" class="win-num" step="1" aria-label="Window start, days">
-        <span>to</span>
-        <input type="number" id="winTo" class="win-num" step="1" aria-label="Window end, days">
-        <span class="win-unit">days from installation</span>
-      </div>
-      <label class="win-cap" title="The last sub-window has always stopped at commissioning, so a referral after commissioning falls outside the window even inside +90. Switching this off makes the window mean literally what it says.">
-        <input type="checkbox" id="winCap" checked>
-        <span>Stop at commissioning</span>
+      <label for="winCap">Window rule</label>
+      <label class="win-cap" title="The last sub-window has always stopped at commissioning, so a referral after commissioning falls outside the window even inside +90 — activation is 71% higher without it. Switching this off makes the window mean literally what it says.">
+        <input type="checkbox" id="winCap" checked><span>Stop at commissioning</span>
       </label>
     </div>
+    <div class="filter" id="winCustom" hidden>
+      <label for="winFrom">Days from install</label>
+      <div class="range">
+        <input type="number" id="winFrom" class="win-num" step="1" aria-label="Window start, days">
+        <input type="number" id="winTo" class="win-num" step="1" aria-label="Window end, days">
+      </div>
+    </div>
+
     <div class="filter"><label>State</label><div id="fState" class="ms"></div></div>
     <div class="filter"><label>Cluster</label><div id="fBranch" class="ms"></div></div>
     <div class="filter grow-end">
@@ -103,12 +109,7 @@
     <div class="card wide">
       <div class="card-head">
         <h2>Referrer activation by cluster</h2>
-        <p id="salesWindowNote"></p>
-        <p class="caveat">Referrals before the window start are treated as a
-           <strong>blindspot</strong> and excluded from every figure here.
-           <strong>Click any number to download that exact list of customers</strong>,
-           with the filters above applied. Turn <em>Click-to-download</em> off to browse
-           without triggering files.</p>
+        <p class="sub-line" id="salesWindowNote"></p>
       </div>
       <div id="tblCity" class="table-wrap scroll centered"></div>
       <p class="finding" id="salesFinding"></p>
@@ -118,18 +119,14 @@
     <div class="card">
       <div class="card-head">
         <h2>Who activates, and when</h2>
-        <p>Sub-Channel of each customer&rsquo;s first in-window referral, by the window
-           it landed in.</p>
-      </div>
+        <p class="sub-line" title="Counted on the first in-window referral, so the bars sum back to the activated count.">Sub-Channel of each customer&rsquo;s first in-window referral, by the window it landed in.</p></div>
       <div class="chart" id="chWindowMix"></div>
     </div>
 
     <div class="card">
       <div class="card-head">
         <h2>Actual time from installation</h2>
-        <p>Days from installation to the first in-window referral. The windows above
-           are buckets; this is the underlying distribution.</p>
-      </div>
+        <p class="sub-line" title="The windows above are buckets; this is the underlying distribution, as p50, p90 and mean days.">Days from installation to the first in-window referral.</p></div>
       <div id="tblWindowTat" class="table-wrap"></div>
     </div>
   </section>
@@ -153,14 +150,7 @@
     <div class="card wide">
       <div class="card-head">
         <h2>Month on month &mdash; <span id="ddTitle" class="dd-title"></span></h2>
-        <p>Every metric for the selection, split by <strong>installation month</strong>.
-           Customers sit in the month their system was installed, and their referrals
-           are then counted inside that customer&rsquo;s own activation window &mdash;
-           so a column is a cohort, not a calendar of referrals.</p>
-        <p class="caveat">Recent months read low because most of their 90-day window
-           has not elapsed yet. <strong>Click any count to download that month&rsquo;s
-           customers</strong>; percentages and per-referrer ratios are derived, so they
-           are not clickable.</p>
+        <p class="sub-line" title="Customers sit in the month their system was installed, and their referrals are counted inside that customer’s own activation window — so a column is a cohort, not a calendar of referrals. Recent months read low because most of their window has not elapsed yet. Click any count to download that month’s customers; percentages and per-referrer ratios are derived, so they are not clickable.">Every metric for the selection, by <strong>installation month</strong>.</p>
       </div>
       <div id="tblMonthly" class="table-wrap scroll matrix"></div>
       <p class="finding" id="ddFinding"></p>
@@ -169,14 +159,7 @@
     <div class="card wide" id="cardSc">
       <div class="card-head">
         <h2>Solar Consultants &mdash; <span id="ddScTitle" class="dd-title"></span></h2>
-        <p>Each consultant&rsquo;s own installed base and how much of it activated.
-           A customer is attributed to the consultant on their order
-           (<code>lead.assigned_sc</code>), so this is the book they handed over, not
-           who chased the referral afterwards.</p>
-        <p class="caveat">The picker lists only the consultants working the selected
-           cluster. Tick one or several &mdash; or click a name below &mdash; to narrow
-           the month-on-month table to those books. Consultants with a very small base
-           swing wildly on percentage: read Act % alongside the base, never alone.</p>
+        <p class="sub-line" title="A customer is attributed to the consultant on their order (lead.assigned_sc), so this is the book they handed over, not who chased the referral afterwards. The picker lists only consultants working the selected cluster; tick one or several, or click a name below, to narrow the month-on-month table to those books. Consultants with a very small base swing wildly on percentage — read Act % alongside the base, never alone.">Each consultant&rsquo;s own book, and how much of it activated.</p>
       </div>
       <div id="tblSc" class="table-wrap scroll centered"></div>
     </div>
@@ -204,17 +187,7 @@
     <div class="card wide">
       <div class="card-head">
         <h2>Month on month by cluster</h2>
-        <p>Every cluster by <strong>installation month</strong>, with an India row pinned
-           on top. <strong>Referrer Activation</strong> and <strong>Successful
-           Referrer</strong> are both measured against the <strong>installed base</strong>
-           &mdash; the %/# switch changes only how that number is printed, never the
-           denominator.</p>
-        <p class="caveat">A column is a cohort, not a calendar month of referrals, so the
-           newest months keep rising for ninety days after their last installation.
-           <strong>Click a column heading to fold its months away</strong> and leave just
-           the period Total &mdash; IDV starts folded, as it has no source wired up yet.
-           Click any count to download those customers.</p>
-      </div>
+        <p class="sub-line" title="A column is a cohort, not a calendar month of referrals, so the newest months keep rising for ninety days after their last installation. The %/# switch changes only how the number is printed, never the denominator. Click a column heading to fold its months away and leave just the period Total. Click any count to download those customers.">By <strong>installation month</strong>, India pinned on top. Both rates are shares of the <strong>installed base</strong>.</p></div>
       <div id="tblMom" class="table-wrap scroll grouped-wrap"></div>
       <p class="finding" id="momFinding"></p>
     </div>
@@ -225,14 +198,7 @@
     <div class="card wide">
       <div class="card-head">
         <h2>How fast the referral arrives</h2>
-        <p>Share of each group&rsquo;s installed base that had referred <strong>by</strong>
-           day N. Cumulative, so every line only rises.</p>
-        <p class="caveat">This is the chart that makes cohorts comparable. A flat
-           activation rate always flatters older months, because a month installed
-           three weeks ago has not lived through its window. Read two lines off the
-           <strong>same</strong> x here and the comparison is fair &mdash; a young
-           cohort&rsquo;s line simply stops where its data runs out.</p>
-        <div class="seg" id="speedDim" role="group">
+        <p class="sub-line" title="The one view that compares cohorts fairly: a flat activation rate always flatters older months, because a month installed three weeks ago has not lived through its window. Read two lines off the same x and the comparison is honest. A young cohort’s line stops where its data runs out.">Cumulative share of each group&rsquo;s installed base that had referred <strong>by</strong> day N.</p><div class="seg" id="speedDim" role="group">
           <button type="button" data-dim="cohort_month" class="on">By install month</button>
           <button type="button" data-dim="branch">By cluster</button>
         </div>
@@ -244,14 +210,7 @@
     <div class="card wide">
       <div class="card-head">
         <h2>Where the first referral lands</h2>
-        <p>Each cluster&rsquo;s activated customers split by how many days after
-           installation their first in-window referral came in.</p>
-        <p class="caveat">Buckets follow the activation window &mdash; narrow it and they
-           trim, widen it past +90 and the overflow gets its own bucket. The
-           <strong>%</strong> switch reads each bucket as a share of that
-           cluster&rsquo;s <em>activated</em> customers, which is what makes the shape
-           comparable between a big cluster and a small one.</p>
-        <div class="seg" id="speedUnit" role="group">
+        <p class="sub-line" title="Buckets follow the activation window — narrow it and they trim, widen it past +90 and the overflow gets its own bucket. The % switch reads each bucket as a share of that cluster’s activated customers, which is what makes the shape comparable between a big cluster and a small one.">Activated customers by how many days after installation their first in-window referral came in.</p><div class="seg" id="speedUnit" role="group">
           <button type="button" data-unit="num" class="on">#</button>
           <button type="button" data-unit="pct">% of activated</button>
         </div>
@@ -271,6 +230,6 @@
 <script src="js/data.js?v=f718e06c"></script>
 <script src="js/charts.js?v=70875dd2"></script>
 <script src="js/export.js?v=6f3f1dc5"></script>
-<script src="js/app.js?v=640718bf"></script>
+<script src="js/app.js?v=5913822b"></script>
 </body>
 </html>

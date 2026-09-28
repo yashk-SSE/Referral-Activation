@@ -70,8 +70,8 @@ body { position: relative; }
 
 /* ---- filters ---------------------------------------------------------- */
 .filters {
-  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px;
-  padding: 12px 24px;
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px;
+  padding: 9px 20px;
   background: var(--surface); border-bottom: 1px solid var(--border);
   position: sticky; top: 0; z-index: 20;
 }
@@ -141,12 +141,12 @@ body { position: relative; }
 
 /* ---- KPIs ------------------------------------------------------------- */
 .kpis {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 10px; padding: 16px 24px 4px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 8px; padding: 10px 20px 0;
 }
 .kpi {
   background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 12px 14px 12px 16px;
+  border-radius: var(--radius); padding: 9px 10px 9px 12px;
   box-shadow: var(--shadow); position: relative; overflow: hidden;
 }
 .kpi::before {
@@ -158,14 +158,14 @@ body { position: relative; }
 .kpi.k-flat::before { background: var(--text-3); }
 .kpi .k-value { color: var(--text); }
 .kpi .k-label {
-  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  font-size: 9px; font-weight: 600; text-transform: uppercase;
   letter-spacing: .05em; color: var(--text-3);
 }
 .kpi .k-value {
-  font-size: 24px; font-weight: 650; letter-spacing: -.02em;
-  margin-top: 3px; font-variant-numeric: tabular-nums;
+  font-size: 20px; font-weight: 650; letter-spacing: -.02em;
+  margin-top: 2px; font-variant-numeric: tabular-nums;
 }
-.kpi .k-note { font-size: 11px; color: var(--text-2); margin-top: 2px; }
+.kpi .k-note { font-size: 10.5px; color: var(--text-3); margin-top: 1px; line-height: 1.35; }
 
 /* ---- tabs ------------------------------------------------------------- */
 .tabs {
@@ -184,20 +184,30 @@ body { position: relative; }
 /* ---- panels ----------------------------------------------------------- */
 .panel {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px; padding: 16px 24px 24px;
+  gap: 10px; padding: 10px 20px 18px;
 }
 @media (max-width: 900px) { .panel { grid-template-columns: 1fr; } }
 .card {
   background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow);
+  border-radius: var(--radius); padding: 12px 14px; box-shadow: var(--shadow);
   min-width: 0;
 }
 .card.wide { grid-column: 1 / -1; }
-.card-head { margin-bottom: 12px; }
-.card-head h2 { font-size: 14px; }
+.card-head { margin-bottom: 8px; }
+.card-head h2 { font-size: 13.5px; letter-spacing: -.005em; }
 .card-head p { margin: 4px 0 0; font-size: 12px; color: var(--text-2); max-width: 74ch; }
 .chart { height: 280px; width: 100%; }
 .chart.tall { height: 380px; }
+
+/* One faded line per card instead of a paragraph and a caveat box. The detail
+   lives in a title= tooltip, so it is still reachable without taking the page.
+   Everything explanatory is text-3: the numbers should carry the weight. */
+.card-head .sub-line {
+  margin: 3px 0 0; font-size: 11.5px; line-height: 1.45;
+  color: var(--text-3); max-width: 96ch; cursor: help;
+}
+.card-head .sub-line strong { font-weight: 600; color: var(--text-2); }
+.card-head .sub-line code { color: var(--text-3); }
 
 /* ---- tables ----------------------------------------------------------- */
 .table-wrap { overflow-x: auto; }
@@ -247,10 +257,11 @@ table.data tbody tr:hover { background: var(--surface-2); }
 
 /* ---- headline finding under a chart ----------------------------------- */
 .finding {
-  margin: 12px 0 0; padding: 10px 13px; border-radius: 8px;
+  margin: 9px 0 0; padding: 8px 11px; border-radius: 8px;
   background: var(--accent-soft); color: var(--text);
   font-size: 13px; line-height: 1.55;
 }
+.finding { font-size: 12.5px; }
 .finding strong { font-weight: 650; }
 
 
@@ -274,13 +285,6 @@ table.data td.drilled { background: var(--good); color: #fff; }
 }
 .r-value { font-size: 12.5px; color: var(--text); font-variant-numeric: tabular-nums; }
 
-/* ---- date presets ------------------------------------------------------ */
-.presets { display: flex; gap: 0; border: 1px solid var(--border-strong); border-radius: 7px; overflow: hidden; }
-.presets button {
-  font: inherit; font-size: 12.5px; padding: 5px 10px; cursor: pointer;
-  border: none; border-right: 1px solid var(--border);
-  background: var(--surface); color: var(--text-2); white-space: nowrap;
-}
 .presets button:last-child { border-right: none; }
 .presets button:hover { background: var(--accent-soft); color: var(--accent); }
 .presets button.on { background: var(--accent); color: #fff; font-weight: 600; }
@@ -416,8 +420,10 @@ table.data td.metric-muted { color: var(--text-3); }
 }
 
 @media (max-width: 420px) {
-  .kpis { grid-template-columns: 1fr; }
-  .presets button { flex: 1 1 45%; }
+  /* Two up still fits now the cards are tighter, and one KPI per row turned the
+     top of a phone screen into seven screens of scrolling. */
+  .kpis { gap: 6px; padding: 10px 12px 2px; }
+  .kpi .k-note { font-size: 10px; }
 }
 
 /* ---- collapsible filter bar (mobile only) ------------------------------ */
@@ -672,3 +678,43 @@ table.data.grouped thead th.g-head.g-closed { color: var(--text-3); font-style: 
 }
 .win-cap { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 11.5px; color: var(--text-2); cursor: pointer; }
 .win-cap input { accent-color: var(--accent); margin: 0; }
+
+
+/* ---- filter dropdowns -------------------------------------------------- */
+/* Two rows of preset buttons were the bulk of the filter bar. A select says
+   the same thing in one control, and the custom inputs only appear when the
+   user actually asks for them. */
+.f-select {
+  font: inherit; font-size: 13px; color: var(--text); background: var(--surface);
+  border: 1px solid var(--border-strong); border-radius: 7px;
+  padding: 5px 8px; min-width: 150px;
+}
+.f-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.range { display: flex; align-items: center; gap: 6px; }
+.range .date-input { min-width: 0; }
+.range .win-num { width: 66px; }
+
+/* ---- lighter KPI strip -------------------------------------------------- */
+
+/* Tabs sit between two dense blocks, so they need less air than the default. */
+.tabs { padding: 0 20px; }
+.foot { padding: 2px 20px 20px; }
+
+@media (max-width: 760px) {
+  .f-select { width: 100%; min-width: 0; }
+  .range { width: 100%; }
+  .range .date-input, .range .win-num { flex: 1 1 0; width: auto; }
+  .panel { padding: 8px 12px 16px; gap: 8px; }
+}
+
+
+/* The checkbox control is shorter than a <select>, and the bar aligns on
+   flex-end, so without this its label floats below every other label. */
+.filter .win-cap { min-height: 28px; margin-top: 0; }
+
+/* The finding reads as a conclusion, not a banner: let the numbers carry it. */
+.finding {
+  background: var(--surface-2); border-left: 2px solid var(--accent);
+  border-radius: 0 6px 6px 0; color: var(--text-2);
+}
+.finding strong { color: var(--text); }

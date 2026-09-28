@@ -195,28 +195,31 @@ function buildFilters() {
   if (minDay) { fromEl.min = minDay; toEl.min = minDay; }
   if (maxDay) { fromEl.max = maxDay; toEl.max = maxDay; }
 
+  const dateSel = document.getElementById('datePreset');
+  const dateCustom = document.getElementById('dateCustom');
   const setRange = (a, b, presetKey) => {
     F.from = a; F.to = b;
     fromEl.value = a || '';
     toEl.value = b || '';
-    document.querySelectorAll('#datePresets button').forEach(btn =>
-      btn.classList.toggle('on', btn.dataset.preset === presetKey));
+    dateSel.value = presetKey;
+    dateCustom.hidden = presetKey !== 'custom';
     render();
   };
 
-  document.querySelectorAll('#datePresets button').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const [a, b] = btn.dataset.preset === 'all'
-        ? [minDay, maxDay]
-        : presetRange(btn.dataset.preset, maxDay);
-      setRange(a, b, btn.dataset.preset);
-    });
+  dateSel.addEventListener('change', () => {
+    const key = dateSel.value;
+    // Custom keeps whatever range is already showing and just reveals the
+    // inputs -- jumping to a different range would lose the user's place.
+    if (key === 'custom') { dateCustom.hidden = false; return; }
+    const [a, b] = key === 'all' ? [minDay, maxDay] : presetRange(key, maxDay);
+    setRange(a, b, key);
   });
-  // Typing a date clears the preset highlight -- it is now a custom range.
+  // Typing a date makes the range custom by definition.
   [fromEl, toEl].forEach(el => el.addEventListener('change', () => {
     F.from = fromEl.value || null;
     F.to = toEl.value || null;
-    document.querySelectorAll('#datePresets button').forEach(b => b.classList.remove('on'));
+    dateSel.value = 'custom';
+    dateCustom.hidden = false;
     render();
   }));
 
@@ -269,14 +272,16 @@ function buildFilters() {
   const winFrom = document.getElementById('winFrom');
   const winTo = document.getElementById('winTo');
   const winCap = document.getElementById('winCap');
+  const winSel = document.getElementById('winPreset');
+  const winCustom = document.getElementById('winCustom');
   const syncWindow = () => {
     winFrom.value = WIN.start;
     winTo.value = WIN.end;
     winCap.checked = WIN.capAtCommissioning;
     const key = WIN.start + ',' + WIN.end;
-    document.querySelectorAll('#winPresets button').forEach(b =>
-      b.classList.toggle('on', b.dataset.win === key));
-    document.getElementById('winBadge').hidden = windowIsDefault();
+    const known = [...winSel.options].some(o => o.value === key);
+    winSel.value = known ? key : 'custom';
+    winCustom.hidden = winSel.value !== 'custom';
   };
   const applyWindow = (a, b) => {
     // A window that ends before it starts has no meaning; keep the old one.
@@ -285,11 +290,11 @@ function buildFilters() {
     syncWindow();
     render();
   };
-  document.querySelectorAll('#winPresets button').forEach(btn =>
-    btn.addEventListener('click', () => {
-      const [a, b] = btn.dataset.win.split(',').map(Number);
-      applyWindow(a, b);
-    }));
+  winSel.addEventListener('change', () => {
+    if (winSel.value === 'custom') { winCustom.hidden = false; return; }
+    const [a, b] = winSel.value.split(',').map(Number);
+    applyWindow(a, b);
+  });
   [winFrom, winTo].forEach(el => el.addEventListener('change', () =>
     applyWindow(parseInt(winFrom.value, 10), parseInt(winTo.value, 10))));
   winCap.addEventListener('change', () => {
@@ -505,12 +510,13 @@ function momGroups() {
 const PANELS = {
 
   sales(idx, s) {
-    const cfg = DS.meta.activation || { start: -3, end: 90 };
-    document.getElementById('salesWindowNote').innerHTML =
-      'A customer counts as <strong>activated</strong> if they gave a referral between ' +
-      '<strong>' + cfg.start + '</strong> and <strong>+' + cfg.end + ' days</strong> of ' +
-      'their installation &mdash; the span covering installation, commissioning, subsidy ' +
-      'disbursal and the first zero bill.';
+    const note = document.getElementById('salesWindowNote');
+    note.innerHTML = 'Activated = referred between <strong>' + WIN.start +
+      '</strong> and <strong>+' + WIN.end + ' days</strong> of installation. ' +
+      'Click any number to download those customers.';
+    note.title = 'The window is set in the filter bar. Referrals before it are a ' +
+      'blindspot and count nowhere on this page. Downloads carry the filters and ' +
+      'the active window; turn Click-to-download off to browse without files.';
 
     // Cluster is the ops accountability unit and matches the Cluster filter.
     const rows = AGG.cityTable(idx, 'branch');
