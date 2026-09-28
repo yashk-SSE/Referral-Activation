@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Referral Activation</title>
 <link rel="icon" type="image/png" href="sse-logo.png">
-<link rel="stylesheet" href="styles.css?v=91a6b179">
+<link rel="stylesheet" href="styles.css?v=ce686bba">
 </head>
 <body>
 
@@ -18,6 +18,7 @@
     </div>
   </div>
   <div class="stamp">
+    <span id="winBadge" class="badge win-badge" hidden></span>
     <span id="modeBadge" class="badge">&nbsp;</span>
     <div class="refreshed">
       <span class="r-label">Last refreshed</span>
@@ -57,6 +58,26 @@
       <label for="fTo">To</label>
       <input type="date" id="fTo" class="date-input">
     </div>
+    <div class="filter">
+      <label>Activation window</label>
+      <div class="presets" id="winPresets">
+        <button type="button" data-win="-3,3">&minus;3 to +3</button>
+        <button type="button" data-win="-3,10">&minus;3 to +10</button>
+        <button type="button" data-win="-3,30">&minus;3 to +30</button>
+        <button type="button" data-win="-3,90" class="on">&minus;3 to +90</button>
+        <button type="button" data-win="-3,365">&minus;3 to +365</button>
+      </div>
+      <div class="win-custom">
+        <input type="number" id="winFrom" class="win-num" step="1" aria-label="Window start, days">
+        <span>to</span>
+        <input type="number" id="winTo" class="win-num" step="1" aria-label="Window end, days">
+        <span class="win-unit">days from installation</span>
+      </div>
+      <label class="win-cap" title="The last sub-window has always stopped at commissioning, so a referral after commissioning falls outside the window even inside +90. Switching this off makes the window mean literally what it says.">
+        <input type="checkbox" id="winCap" checked>
+        <span>Stop at commissioning</span>
+      </label>
+    </div>
     <div class="filter"><label>State</label><div id="fState" class="ms"></div></div>
     <div class="filter"><label>Cluster</label><div id="fBranch" class="ms"></div></div>
     <div class="filter grow-end">
@@ -74,6 +95,7 @@
     <button role="tab" class="tab active" data-tab="sales">Referrer Activation</button>
     <button role="tab" class="tab" data-tab="deepdive">City Deep Dive</button>
     <button role="tab" class="tab" data-tab="mom">MoM by Cluster</button>
+    <button role="tab" class="tab" data-tab="speed">Activation Speed</button>
   </nav>
 
   <!-- ---------------------------------------------------------------- -->
@@ -198,6 +220,46 @@
     </div>
   </section>
 
+  <!-- ---------------------------------------------------------------- -->
+  <section class="panel" data-panel="speed" hidden>
+    <div class="card wide">
+      <div class="card-head">
+        <h2>How fast the referral arrives</h2>
+        <p>Share of each group&rsquo;s installed base that had referred <strong>by</strong>
+           day N. Cumulative, so every line only rises.</p>
+        <p class="caveat">This is the chart that makes cohorts comparable. A flat
+           activation rate always flatters older months, because a month installed
+           three weeks ago has not lived through its window. Read two lines off the
+           <strong>same</strong> x here and the comparison is fair &mdash; a young
+           cohort&rsquo;s line simply stops where its data runs out.</p>
+        <div class="seg" id="speedDim" role="group">
+          <button type="button" data-dim="cohort_month" class="on">By install month</button>
+          <button type="button" data-dim="branch">By cluster</button>
+        </div>
+      </div>
+      <div class="chart tall" id="chSpeed"></div>
+      <p class="finding" id="speedFinding"></p>
+    </div>
+
+    <div class="card wide">
+      <div class="card-head">
+        <h2>Where the first referral lands</h2>
+        <p>Each cluster&rsquo;s activated customers split by how many days after
+           installation their first in-window referral came in.</p>
+        <p class="caveat">Buckets follow the activation window &mdash; narrow it and they
+           trim, widen it past +90 and the overflow gets its own bucket. The
+           <strong>%</strong> switch reads each bucket as a share of that
+           cluster&rsquo;s <em>activated</em> customers, which is what makes the shape
+           comparable between a big cluster and a small one.</p>
+        <div class="seg" id="speedUnit" role="group">
+          <button type="button" data-unit="num" class="on">#</button>
+          <button type="button" data-unit="pct">% of activated</button>
+        </div>
+      </div>
+      <div id="tblSpeed" class="table-wrap scroll centered"></div>
+    </div>
+  </section>
+
   <footer class="foot">
     <span id="footMeta"></span>
     <span id="footWarn" class="warn"></span>
@@ -206,9 +268,9 @@
 
 <!-- vendored so the dashboard works behind corporate networks that block CDNs -->
 <script src="vendor/echarts.min.js?v=79a8b5a0"></script>
-<script src="js/data.js?v=fe322aae"></script>
-<script src="js/charts.js?v=fbdff979"></script>
-<script src="js/export.js?v=0b7f175d"></script>
-<script src="js/app.js?v=98a1a19c"></script>
+<script src="js/data.js?v=f718e06c"></script>
+<script src="js/charts.js?v=70875dd2"></script>
+<script src="js/export.js?v=6f3f1dc5"></script>
+<script src="js/app.js?v=640718bf"></script>
 </body>
 </html>

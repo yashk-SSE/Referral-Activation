@@ -566,6 +566,12 @@ def build_customer_base(
     base["days_to_activation"] = (
         base["first_activation_date"] - base["first_install_date"]).dt.days
 
+    # Days from installation to commissioning. Needed in the browser, where the
+    # activation window is now re-derived live: the "to commissioning" sub-window
+    # cannot be recomputed without it.
+    base["commissioning_offset"] = (
+        base["commissioning_date"] - base["first_install_date"]).dt.days
+
     base["cohort_month"] = base["first_install_date"].dt.strftime("%Y-%m")
     as_of_ts = pd.Timestamp(as_of)
     base["maturity_months"] = (

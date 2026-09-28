@@ -33,12 +33,13 @@ const EXPORT_COLUMNS = [
   { key: 'activated_by_window',         label: 'Sub-Channel' },
   { key: 'activation_window',           label: 'Activation Window' },
   { key: 'first_timing_bucket',         label: 'First Referral Window' },
-  { key: 'days_to_activation',          label: 'Days From Install To First Referral' },
+  { key: 'days_to_activation',          label: 'Days From Install To First In-Window Referral' },
   { key: 'capacity_kw',                 label: 'Capacity kW' }
 ];
 
 function exportableColumns() {
-  return EXPORT_COLUMNS.filter(c => DS.has(c.key));
+  // Window-derived fields have no column of their own to check for.
+  return EXPORT_COLUMNS.filter(c => DS.has(c.key) || LIVE_CELL[c.key]);
 }
 
 function missingIdentityColumns() {
@@ -46,7 +47,24 @@ function missingIdentityColumns() {
     .filter(k => !DS.has(k));
 }
 
+/* Window-dependent fields come from the live window, not the build's columns,
+ * or a download taken at -3..+30 would carry -3..+90 numbers. */
+const LIVE_CELL = {
+  referrer_activated: i => (winStats().activated[i] ? 'Yes' : 'No'),
+  successful_activated: i => (winStats().successful[i] ? 'Yes' : 'No'),
+  leads_in_window: i => winStats().leads[i],
+  orders_in_window: i => winStats().orders[i],
+  activated_by_window: i => (winStats().hasFirst[i]
+    ? REF.subLevels[winStats().sub[i]] : ''),
+  activation_window: i => (winStats().hasFirst[i]
+    ? (subWindowOf(winStats().firstDay[i],
+        DS.cols.commissioning_offset ? DS.cols.commissioning_offset.v[i] : null) || '')
+    : ''),
+  days_to_activation: i => (winStats().hasFirst[i] ? winStats().firstDay[i] : '')
+};
+
 function cellValue(key, i) {
+  if (LIVE_CELL[key]) return LIVE_CELL[key](i);
   const c = DS.cols[key];
   if (!c) return '';
   const v = c.v[i];
@@ -65,7 +83,10 @@ function csvCell(value) {
 
 function buildCsv(indices) {
   const cols = exportableColumns();
-  const lines = [cols.map(c => csvCell(c.label)).join(',')];
+  // The window is part of what the file means, so it travels with it.
+  const lines = [csvCell('Activation window: ' + WIN.start + ' to +' + WIN.end +
+                         ' days from installation'),
+                 cols.map(c => csvCell(c.label)).join(',')];
   for (const i of indices) {
     lines.push(cols.map(c => csvCell(cellValue(c.key, i))).join(','));
   }
@@ -102,25 +123,25 @@ function downloadCustomers(indices, labelParts) {
  * customers who activated, so that the split sums back to the activated count.
  */
 function rowsForMetric(rows, metric) {
+  const w = winStats();
+  const comm = DS.cols.commissioning_offset;
   const sep = String(metric || '').indexOf(':');
   if (sep > 0) {
     const kind = metric.slice(0, sep), value = metric.slice(sep + 1);
-    const act = DS.cols.referrer_activated;
-    const col = DS.cols[kind === 'sub' ? 'activated_by_window' : 'activation_window'];
-    if (!act || !col) return [];
-    const code = col.levels.indexOf(value);
-    if (code < 0) return [];
-    return rows.filter(i => act.v[i] && col.v[i] === code);
+    return rows.filter(i => w.activated[i] && (kind === 'sub'
+      ? REF.subLevels[w.sub[i]] === value
+      : subWindowOf(w.firstDay[i], comm ? comm.v[i] : null) === value));
   }
   const want = {
     installed: () => true,
-    referrer_activated: i => DS.cols.referrer_activated.v[i],
-    successful_activated: i => DS.cols.successful_activated.v[i],
-    not_referred: i => !DS.cols.referrer_activated.v[i],
-    leads: i => (DS.cols.leads_in_window.v[i] || 0) > 0,
-    orders: i => (DS.cols.orders_in_window.v[i] || 0) > 0,
+    referrer_activated: i => w.activated[i],
+    successful_activated: i => w.successful[i],
+    not_referred: i => !w.activated[i],
+    leads: i => w.leads[i] > 0,
+    orders: i => w.orders[i] > 0,
     cx_recommended: i => DS.cols.cx_recommended && DS.cols.cx_recommended.v[i],
-    idv: i => DS.cols.idv_done && DS.cols.idv_done.v[i]
+    idv: i => DS.cols.idv_done && DS.cols.idv_done.v[i],
+    idv_scheduled: i => DS.cols.idv_scheduled && DS.cols.idv_scheduled.v[i]
   }[metric] || (() => true);
   return rows.filter(want);
 }

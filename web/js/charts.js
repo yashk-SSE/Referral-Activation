@@ -128,7 +128,12 @@ function renderTable(elId, columns, rows, opts) {
     el.querySelectorAll('td.drill').forEach(td => td.addEventListener('click', () => {
       const row = sorted.find(r => String(r.name) === td.dataset.row);
       if (!row || !row.rows) return;
-      const picked = rowsForMetric(row.rows, td.dataset.metric);
+      // Speed buckets already carry their own row sets -- the bucket edges live
+      // on the aggregation, not in a column rowsForMetric could read.
+      const m = td.dataset.metric;
+      const picked = (opts.bucketDrill && m.indexOf('speed:') === 0 && row.bucketRows)
+        ? (row.bucketRows[+m.slice(6)] || [])
+        : rowsForMetric(row.rows, m);
       const file = downloadCustomers(picked, [row.name, td.dataset.metric]);
       if (file) {
         td.classList.add('drilled');
@@ -313,4 +318,52 @@ function renderGroupedMatrix(elId, groups, data, opts) {
       }
     }));
   }
+}
+
+/* ---------------------------------------------------------------------- */
+/* cumulative activation by day since installation                          */
+/* ---------------------------------------------------------------------- */
+/* The one chart that makes cohorts comparable. A young month always looks bad
+ * on a flat rate because it has not lived through its window; read off the same
+ * x here and the comparison is honest. */
+const CURVE_COLORS = ['#1a56db', '#17a2a2', '#f59e0b', '#8b5cf6', '#d4506b',
+                      '#166534', '#e0862c', '#0891b2', '#6366f1', '#94a3b8'];
+
+function chartSpeedCurve(curve, opts) {
+  opts = opts || {};
+  const series = curve.series.slice(0, opts.limit || 10);
+  mount('chSpeed', Object.assign(BASE(), {
+    grid: { left: 46, right: 18, top: 30, bottom: 40, containLabel: true },
+    legend: { top: 0, type: 'scroll', textStyle: { color: C.text, fontSize: 10 } },
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: C.tooltipBg, borderColor: C.tooltipBorder,
+      textStyle: { color: C.text, fontSize: 11 },
+      axisPointer: { type: 'line' },
+      formatter: params => {
+        if (!params.length) return '';
+        const d = params[0].axisValue;
+        return 'Day ' + d + '<br>' + params.map(p =>
+          p.marker + ' ' + p.seriesName + ': <strong>' +
+          (+p.value).toFixed(1) + '%</strong>').join('<br>');
+      }
+    },
+    xAxis: AXIS_X({
+      type: 'category', data: curve.days,
+      name: 'days from installation', nameLocation: 'middle', nameGap: 26,
+      nameTextStyle: { color: C.text, fontSize: 10 },
+      axisLabel: { color: C.text, fontSize: 10, interval: (i, v) => +v % 10 === 0 }
+    }),
+    yAxis: AXIS_Y({
+      name: '% of installed base activated',
+      nameTextStyle: { color: C.text, fontSize: 10 },
+      axisLabel: { color: C.text, fontSize: 10, formatter: '{value}%' }
+    }),
+    series: series.map((s, i) => ({
+      name: s.name + '  (' + fmtInt(s.base) + ')',
+      type: 'line', smooth: false, showSymbol: false, data: s.values,
+      lineStyle: { width: 2, color: CURVE_COLORS[i % CURVE_COLORS.length] },
+      itemStyle: { color: CURVE_COLORS[i % CURVE_COLORS.length] }
+    }))
+  }));
 }

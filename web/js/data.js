@@ -63,6 +63,12 @@ async function loadData() {
   DS.n = customers.n;
   DS.cols = customers.columns;
   DS.meta = meta;
+  buildReferralIndex(customers);
+  const a = meta.activation || {};
+  WIN.start = a.start !== undefined ? a.start : -3;
+  WIN.end = a.end !== undefined ? a.end : 90;
+  WIN.defStart = WIN.start; WIN.defEnd = WIN.end;
+  SUB_WINDOWS = Array.isArray(meta.sub_windows) ? meta.sub_windows : [];
   if (Array.isArray(meta.sub_channels) && meta.sub_channels.length) {
     SOURCES = meta.sub_channels;
     SOURCES.forEach(s => { if (!SOURCE_COLOR[s]) SOURCE_COLOR[s] = FALLBACK_COLOR; });
@@ -71,6 +77,110 @@ async function loadData() {
     TIMING_BUCKETS = meta.timing_buckets;
   }
   return DS;
+}
+
+/* ---------------------------------------------------------------------- */
+/* the activation window, and everything derived from it                   */
+/* ---------------------------------------------------------------------- */
+/* Every referral's day-offset from its own customer's installation, laid out
+ * CSR-style: customer i owns day[start[i] .. start[i+1]). This is what makes
+ * the window configurable here rather than baked into the build -- the ETL
+ * ships offsets, the dashboard decides what counts. */
+const REF = { start: null, day: null, conv: null, sub: null, subLevels: [] };
+let SUB_WINDOWS = [];
+
+function buildReferralIndex(payload) {
+  const r = payload.referrals;
+  if (!r || !r.count) return;
+  const n = r.count.length;
+  const start = new Int32Array(n + 1);
+  for (let i = 0; i < n; i++) start[i + 1] = start[i] + r.count[i];
+  REF.start = start;
+  REF.day = Int16Array.from(r.day);
+  REF.conv = Uint8Array.from(r.conv);
+  REF.sub = Uint8Array.from(r.sub);
+  REF.subLevels = r.sub_levels || [];
+}
+
+/* capAtCommissioning reproduces what the ETL has always done, and it is not a
+ * small detail: assign_timing_bucket caps the LAST sub-window at commissioning,
+ * and because the sub-windows tile the range, a referral after commissioning
+ * falls out of the window entirely -- even though it sits inside +90. So the
+ * headline "-3 to +90" has always meant "-3 to whichever of +90 and
+ * commissioning comes first". Switching the cap off raises activation by about
+ * 70%, so it defaults ON and changing it is a deliberate act. */
+const WIN = { start: -3, end: 90, defStart: -3, defEnd: 90,
+              capAtCommissioning: true, _cache: null };
+function setWindow(start, end, cap) {
+  WIN.start = start; WIN.end = end;
+  if (cap !== undefined) WIN.capAtCommissioning = !!cap;
+  WIN._cache = null;
+}
+const windowIsDefault = () =>
+  WIN.start === WIN.defStart && WIN.end === WIN.defEnd && WIN.capAtCommissioning;
+
+/** Does this referral count, for the window as currently configured? */
+function inWindow(day, comm) {
+  if (day < WIN.start || day > WIN.end) return false;
+  if (!WIN.capAtCommissioning) return true;
+  // Faithful to the ETL: in-window means it lands in some sub-window, and the
+  // last sub-window stops at commissioning.
+  return SUB_WINDOWS.length ? subWindowOf(day, comm) !== null : true;
+}
+
+/* One pass over 56k referrals, then cached. statsFor runs hundreds of times a
+ * render and must not re-walk them each time. */
+function winStats() {
+  if (WIN._cache) return WIN._cache;
+  const n = DS.n;
+  const c = {
+    activated: new Uint8Array(n), successful: new Uint8Array(n),
+    leads: new Int32Array(n), orders: new Int32Array(n),
+    firstDay: new Int16Array(n), hasFirst: new Uint8Array(n),
+    sub: new Uint8Array(n)
+  };
+  if (!REF.start) return (WIN._cache = c);
+  const comm = DS.cols.commissioning_offset;
+  for (let i = 0; i < n; i++) {
+    const a = REF.start[i], b = REF.start[i + 1];
+    const co = comm ? comm.v[i] : null;
+    let l = 0, o = 0, seen = 0;
+    for (let k = a; k < b; k++) {
+      const d = REF.day[k];
+      if (!inWindow(d, co)) continue;
+      l++;
+      if (REF.conv[k]) o++;
+      // Referrals are stored in time order within a customer, so the first one
+      // to pass the filter is their first IN-WINDOW referral.
+      if (!seen) { seen = 1; c.firstDay[i] = d; c.sub[i] = REF.sub[k]; }
+    }
+    c.leads[i] = l; c.orders[i] = o;
+    c.activated[i] = l > 0 ? 1 : 0;
+    c.successful[i] = o > 0 ? 1 : 0;
+    c.hasFirst[i] = seen;
+  }
+  return (WIN._cache = c);
+}
+
+const subChannelOf = i => {
+  const c = winStats();
+  return c.hasFirst[i] ? (REF.subLevels[c.sub[i]] || 'Others') : null;
+};
+
+/** Which reporting sub-window a day offset falls in, for the active window.
+ *
+ * The last sub-window is capped by commissioning: once commissioned the
+ * customer is a live user, not someone mid-installation. */
+function subWindowOf(day, commissioningOffset) {
+  for (const w of SUB_WINDOWS) {
+    const lo = w.start;
+    const hi = (w.cap_at_commissioning && WIN.capAtCommissioning)
+      ? Math.min(commissioningOffset === null || commissioningOffset === undefined
+                 ? WIN.end : commissioningOffset, WIN.end)
+      : (w.end === null || w.end === undefined ? WIN.end : w.end);
+    if (day >= lo && day <= hi) return w.label;
+  }
+  return null;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -159,11 +269,10 @@ function liveFlags() {
  */
 function statsFor(rows, name) {
   const live = liveFlags();
-  const act = DS.cols.referrer_activated, suc = DS.cols.successful_activated;
-  const lw = DS.cols.leads_in_window, ow = DS.cols.orders_in_window;
+  const w = winStats();
   const rec = DS.cols.cx_recommended, idv = DS.cols.idv_done;
   const idvs = DS.cols.idv_scheduled;
-  const scol = DS.cols.activated_by_window, wcol = DS.cols.activation_window;
+  const comm = DS.cols.commissioning_offset;
 
   const t = {
     name, rows,
@@ -176,26 +285,22 @@ function statsFor(rows, name) {
     referrer_activated: 0, successful_activated: 0, leads: 0, orders: 0,
     bySubChannel: {}, byWindow: {}
   };
-  if (act) {
-    for (const i of rows) {
-      if (act.v[i]) {
-        t.referrer_activated++;
-        // Sub-Channel and window are read only for activated customers, so
-        // these tallies always sum back to referrer_activated.
-        const s = scol && scol.v[i] !== null && scol.v[i] !== undefined
-          ? scol.levels[scol.v[i]] : null;
-        if (s) t.bySubChannel[s] = (t.bySubChannel[s] || 0) + 1;
-        const w = wcol && wcol.v[i] !== null && wcol.v[i] !== undefined
-          ? wcol.levels[wcol.v[i]] : null;
-        if (w) t.byWindow[w] = (t.byWindow[w] || 0) + 1;
-      }
-      if (suc && suc.v[i]) t.successful_activated++;
-      t.leads += (lw && lw.v[i]) || 0;
-      t.orders += (ow && ow.v[i]) || 0;
-      if (live.rec && rec.v[i]) t.cx_recommended++;
-      if (live.idv && idv.v[i]) t.idv++;
-      if (live.idvSched && idvs.v[i]) t.idv_scheduled++;
+  for (const i of rows) {
+    if (w.activated[i]) {
+      t.referrer_activated++;
+      // Sub-Channel and window are read only for activated customers, so these
+      // tallies always sum back to referrer_activated.
+      const sc = REF.subLevels[w.sub[i]];
+      if (sc) t.bySubChannel[sc] = (t.bySubChannel[sc] || 0) + 1;
+      const bk = subWindowOf(w.firstDay[i], comm ? comm.v[i] : null);
+      if (bk) t.byWindow[bk] = (t.byWindow[bk] || 0) + 1;
     }
+    if (w.successful[i]) t.successful_activated++;
+    t.leads += w.leads[i];
+    t.orders += w.orders[i];
+    if (live.rec && rec.v[i]) t.cx_recommended++;
+    if (live.idv && idv.v[i]) t.idv++;
+    if (live.idvSched && idvs.v[i]) t.idv_scheduled++;
   }
   t.not_referred = t.installed - t.referrer_activated;
   t.activation_rate = pct(t.referrer_activated, t.installed);
@@ -248,16 +353,13 @@ const AGG = {
 
   /** Headline activation numbers, all measured inside the window. */
   activationSummary(idx) {
-    const act = DS.cols.referrer_activated, suc = DS.cols.successful_activated;
-    const lw = DS.cols.leads_in_window, ow = DS.cols.orders_in_window;
+    const w = winStats();
     let activated = 0, successful = 0, leads = 0, orders = 0;
-    if (act) {
-      for (const i of idx) {
-        if (act.v[i]) activated++;
-        if (suc && suc.v[i]) successful++;
-        leads += (lw && lw.v[i]) || 0;
-        orders += (ow && ow.v[i]) || 0;
-      }
+    for (const i of idx) {
+      if (w.activated[i]) activated++;
+      if (w.successful[i]) successful++;
+      leads += w.leads[i];
+      orders += w.orders[i];
     }
     return {
       activated, successful, leads, orders,
@@ -274,7 +376,6 @@ const AGG = {
    * Recommended and IDV stay null while they are placeholders.
    */
   cityTable(idx, dim) {
-    if (!DS.cols.referrer_activated) return [];
     const groups = groupRows(idx, dim || 'city');
     return [statsFor(idx, 'India (all)')].concat(
       [...groups.entries()]
@@ -299,6 +400,76 @@ const AGG = {
     const total = statsFor(idx, 'Total');
     total.label = 'Total';
     return { months, total };
+  },
+
+  /** The timing buckets, clipped to whatever window is active.
+   *
+   * The six are the shape the business reads activation in. If the window is
+   * narrower they are trimmed; if it is wider, the overflow gets its own
+   * bucket rather than being silently dropped.
+   */
+  speedBuckets() {
+    const RAW = [[-3, 0], [1, 3], [4, 10], [11, 30], [31, 60], [61, 90]];
+    const out = [];
+    if (WIN.start < -3) out.push({ lo: WIN.start, hi: -4 });
+    for (const [lo, hi] of RAW) {
+      const a = Math.max(lo, WIN.start), b = Math.min(hi, WIN.end);
+      if (a > b) continue;
+      out.push({ lo: a, hi: b });
+    }
+    if (WIN.end > 90) out.push({ lo: 91, hi: WIN.end });
+    return out.map(b => ({ ...b, label: b.lo + ' to ' + b.hi }));
+  },
+
+  /** Activated customers split across those buckets, one row per cluster. */
+  speedTable(idx, dim) {
+    const buckets = this.speedBuckets();
+    const w = winStats();
+    const build = (name, rows) => {
+      const r = { name, rows, installed: rows.length, activated: 0,
+                  counts: buckets.map(() => 0), bucketRows: buckets.map(() => []) };
+      for (const i of rows) {
+        if (!w.activated[i]) continue;
+        r.activated++;
+        const d = w.firstDay[i];
+        for (let b = 0; b < buckets.length; b++) {
+          if (d >= buckets[b].lo && d <= buckets[b].hi) {
+            r.counts[b]++; r.bucketRows[b].push(i); break;
+          }
+        }
+      }
+      return r;
+    };
+    const out = [build('India (all)', idx)];
+    for (const [key, rows] of [...groupRows(idx, dim || 'branch').entries()]
+        .sort((a, b) => b[1].length - a[1].length)) out.push(build(key, rows));
+    return { buckets, rows: out };
+  },
+
+  /** Cumulative activation by day since installation, per group.
+   *
+   * The point of this cut: it compares a young cohort with a mature one at the
+   * SAME age. "August looks worse than June" is unanswerable on a rate alone,
+   * because August has not lived through its window yet -- but "at day 30,
+   * August was at 12.1% against June's 11.4%" is a fair comparison.
+   */
+  speedCurve(idx, dim) {
+    const w = winStats();
+    const days = [];
+    for (let d = WIN.start; d <= WIN.end; d++) days.push(d);
+    const span = days.length;
+    const series = [];
+    for (const [key, rows] of [...groupRows(idx, dim || 'cohort_month').entries()]
+        .sort((a, b) => (dim === 'branch' ? b[1].length - a[1].length
+                                          : String(a[0]).localeCompare(String(b[0]))))) {
+      const hist = new Int32Array(span);
+      for (const i of rows) if (w.activated[i]) hist[w.firstDay[i] - WIN.start]++;
+      let run = 0;
+      const values = [];
+      for (let k = 0; k < span; k++) { run += hist[k]; values.push(pct(run, rows.length)); }
+      series.push({ name: key, base: rows.length, values });
+    }
+    return { days, series };
   },
 
   /** Distinct values of a column with their row counts, biggest first.
@@ -375,7 +546,7 @@ const AGG = {
    * consultant handed over, not whoever chased the referral later.
    */
   scTable(idx) {
-    if (!DS.has('sc_name') || !DS.cols.referrer_activated) return [];
+    if (!DS.has('sc_name')) return [];
     const groups = groupRows(idx, 'sc_name', '(not assigned)');
     return [...groups.entries()]
       .map(([key, rows]) => statsFor(rows, key))
@@ -388,22 +559,20 @@ const AGG = {
    * referrer_activated. Blindspot referrals take no part.
    */
   subChannelByWindow(idx) {
-    const wcol = DS.cols.activation_window, scol = DS.cols.activated_by_window;
-    const act = DS.cols.referrer_activated, dta = DS.cols.days_to_activation;
-    if (!wcol || !scol || !act) return { windows: [], series: {}, tat: [] };
+    const c = winStats(), comm = DS.cols.commissioning_offset;
     const windows = inWindowBuckets();
     const series = {};
     SOURCES.forEach(s => { series[s] = windows.map(() => 0); });
     const tatBy = new Map();
     for (const i of idx) {
-      if (!act.v[i]) continue;
-      const w = wcol.v[i] === null || wcol.v[i] === undefined ? null : wcol.levels[wcol.v[i]];
-      const sc = scol.v[i] === null || scol.v[i] === undefined ? null : scol.levels[scol.v[i]];
-      const wi = windows.indexOf(w);
+      if (!c.activated[i]) continue;
+      const bk = subWindowOf(c.firstDay[i], comm ? comm.v[i] : null);
+      const sc = REF.subLevels[c.sub[i]];
+      const wi = windows.indexOf(bk);
       if (sc && series[sc] && wi >= 0) series[sc][wi]++;
-      if (sc && dta && dta.v[i] !== null && dta.v[i] !== undefined) {
+      if (sc) {
         if (!tatBy.has(sc)) tatBy.set(sc, []);
-        tatBy.get(sc).push(dta.v[i]);
+        tatBy.get(sc).push(c.firstDay[i]);
       }
     }
     const q = (arr, p) => {
@@ -424,6 +593,8 @@ const AGG = {
  * The blindspot is excluded by design, and "After window" cannot appear among
  * activated customers -- a referral past +90 days does not activate anyone. */
 function inWindowBuckets() {
-  return (TIMING_BUCKETS || []).filter(
-    b => b.indexOf('blindspot') === -1 && b !== 'After window');
+  return SUB_WINDOWS.length
+    ? SUB_WINDOWS.map(w => w.label)
+    : (TIMING_BUCKETS || []).filter(
+        b => b.indexOf('blindspot') === -1 && b !== 'After window');
 }

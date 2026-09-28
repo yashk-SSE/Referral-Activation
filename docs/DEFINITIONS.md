@@ -183,6 +183,34 @@ yet; they are mapped for when they do.
 
 Configured in `etl/funnel_config.json`.
 
+### The activation window is now set in the browser
+
+The window is no longer baked into the build. The ETL ships **every referral's
+day-offset from its own customer's installation** (56k of them, ~0.4 MB) and the
+dashboard re-derives activation, leads, orders, the Sub-Channel split and the
+sub-window buckets for whatever range is selected. Presets run −3…+3 through
+−3…+365, plus a custom pair of day numbers.
+
+A non-default window is stamped in the **top bar** and written as the first line
+of **every CSV export**, because it changes what every number on the page means.
+*Reset* returns to −3…+90 with the cap on.
+
+> **−3 to +90 has never meant −3 to +90.**
+>
+> `assign_timing_bucket` caps the **last sub-window at commissioning**, and
+> because the sub-windows tile the whole range, a referral landing after
+> commissioning falls out of the window *entirely* — even though it sits inside
+> +90. So the real rule has always been **−3 to whichever of +90 and
+> commissioning comes first**.
+>
+> It is not a rounding difference. On Jun–Aug 2026 installs, activation is
+> **1,653 with the cap and 2,833 without** — 71% higher.
+>
+> The **Stop at commissioning** checkbox controls it, and defaults **on**, so
+> every published number is unchanged. Switching it off makes the window mean
+> literally what it says. That is a decision about what "activated" means, not a
+> display option, so it is deliberately a separate control from the day range.
+
 ### The activation window
 
 A referral counts as an **activation** only if it lands between
@@ -405,6 +433,48 @@ its month columns sum to that Total -- asserted across all 33 clusters for
 installs, activation, successful referrers, leads and orders. Clicking any count
 downloads the customers behind it; percentages are derived and so are not
 clickable.
+
+---
+
+## 5f. Activation Speed (tab 4)
+
+Two views of **when** the first in-window referral arrives.
+
+### The cumulative curve
+
+Share of each group's installed base that had referred **by** day N, plotted
+from the window start to the window end. One line per installation month, or
+per cluster.
+
+This is the only view on the dashboard that compares cohorts **fairly**. Every
+other tab carries the caveat that recent months read low because they have not
+lived through their window — true, but unactionable. Here you read two lines off
+the same x and the comparison is honest: at day 30, June stood at **16.2%** and
+August at **14.0%**, so August is genuinely behind, not merely young. A young
+cohort's line simply stops where its data runs out.
+
+It also shows where the curve flattens, which is what should set the window in
+the first place.
+
+### The bucket table
+
+Activated customers split by days from installation, one row per cluster:
+
+    -3 to 0 | 1 to 3 | 4 to 10 | 11 to 30 | 31 to 60 | 61 to 90
+
+Buckets follow the active window — narrow it and they trim, widen it past +90
+and the overflow gets its own bucket. The **%** switch reads each bucket as a
+share of that cluster's *activated* customers, which is what makes the shape
+comparable between a big cluster and a small one. Counts sum to Activated by
+construction.
+
+On Jun–Aug 2026: **39.4%** of activations land by installation day itself,
+**80.8%** by day 10, **97.6%** by day 30. The back two thirds of the +90 window
+contribute **2.3%**.
+
+The shape differs sharply by cluster and that is the point of the cut — Bhopal
+puts 79% in the −3-to-0 bucket against Nagpur's 24%. That is a difference in
+*when the referral is captured*, not in how many are captured.
 
 ---
 

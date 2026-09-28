@@ -263,6 +263,58 @@ function buildFilters() {
     render();
   });
 
+  // --- activation window -------------------------------------------------
+  // Live: moving it re-derives activation, leads, orders and the sub-window
+  // buckets for every tab at once, off the per-referral offsets in the payload.
+  const winFrom = document.getElementById('winFrom');
+  const winTo = document.getElementById('winTo');
+  const winCap = document.getElementById('winCap');
+  const syncWindow = () => {
+    winFrom.value = WIN.start;
+    winTo.value = WIN.end;
+    winCap.checked = WIN.capAtCommissioning;
+    const key = WIN.start + ',' + WIN.end;
+    document.querySelectorAll('#winPresets button').forEach(b =>
+      b.classList.toggle('on', b.dataset.win === key));
+    document.getElementById('winBadge').hidden = windowIsDefault();
+  };
+  const applyWindow = (a, b) => {
+    // A window that ends before it starts has no meaning; keep the old one.
+    if (!Number.isFinite(a) || !Number.isFinite(b) || a > b) { syncWindow(); return; }
+    setWindow(a, b);
+    syncWindow();
+    render();
+  };
+  document.querySelectorAll('#winPresets button').forEach(btn =>
+    btn.addEventListener('click', () => {
+      const [a, b] = btn.dataset.win.split(',').map(Number);
+      applyWindow(a, b);
+    }));
+  [winFrom, winTo].forEach(el => el.addEventListener('change', () =>
+    applyWindow(parseInt(winFrom.value, 10), parseInt(winTo.value, 10))));
+  winCap.addEventListener('change', () => {
+    setWindow(WIN.start, WIN.end, winCap.checked);
+    syncWindow();
+    render();
+  });
+  syncWindow();
+
+  // --- Activation Speed controls -----------------------------------------
+  document.querySelectorAll('#speedDim button').forEach(btn =>
+    btn.addEventListener('click', () => {
+      SPEED.dim = btn.dataset.dim;
+      document.querySelectorAll('#speedDim button').forEach(b =>
+        b.classList.toggle('on', b === btn));
+      render();
+    }));
+  document.querySelectorAll('#speedUnit button').forEach(btn =>
+    btn.addEventListener('click', () => {
+      SPEED.asPct = btn.dataset.unit === 'pct';
+      document.querySelectorAll('#speedUnit button').forEach(b =>
+        b.classList.toggle('on', b === btn));
+      render();
+    }));
+
   // --- MoM by Cluster controls ------------------------------------------
   // The %/# switch and the column chips both live above the table rather than
   // inside it: they change how every column reads, so they cannot sit in one.
@@ -296,6 +348,8 @@ function buildFilters() {
   document.getElementById('resetFilters').addEventListener('click', () => {
     F.state.clear(); F.branch.clear();
     DD.cluster = ''; DD.sc.clear();
+    setWindow(WIN.defStart, WIN.defEnd, true);
+    syncWindow();
     document.querySelectorAll('.ms').forEach(el => { if (el._reset) el._reset(); });
     const [a, b] = presetRange('3m', maxDay);
     setRange(a, b, '3m');
@@ -409,6 +463,8 @@ function matrixRows() {
  *
  * IDV starts folded because it has no source wired up yet -- the column should
  * be visible as a column without spending four cells on dashes. */
+const SPEED = { dim: 'cohort_month', asPct: false };
+
 const MOM = {
   asPct: true,
   hidden: new Set(),
@@ -549,6 +605,55 @@ const PANELS = {
       '</strong> clusters.';
   },
 
+  /* When the first referral arrives, and how that differs by month and place. */
+  speed(idx) {
+    const curve = AGG.speedCurve(idx, SPEED.dim);
+    chartSpeedCurve(curve, { limit: SPEED.dim === 'branch' ? 8 : 12 });
+
+    const data = AGG.speedTable(idx, 'branch');
+    const india = data.rows[0];
+    const cols = [{ key: 'name', label: 'Cluster' },
+                  { key: 'installed', label: 'Installed base', num: true, metric: 'installed' },
+                  { key: 'activated', label: 'Activated', num: true, metric: 'referrer_activated' }];
+    data.buckets.forEach((b, bi) => cols.push({
+      key: 'b' + bi, label: b.label + ' days', num: true,
+      metric: 'speed:' + bi,
+      fmt: v => (SPEED.asPct ? fmtPct(v) : fmtInt(v))
+    }));
+    const rows = data.rows.map(r => {
+      const o = { name: r.name, rows: r.rows, installed: r.installed,
+                  activated: r.activated, bucketRows: r.bucketRows };
+      r.counts.forEach((c, bi) => {
+        o['b' + bi] = SPEED.asPct ? pct(c, r.activated) : c;
+      });
+      return o;
+    });
+    renderTable('tblSpeed', cols, rows,
+                { sortKey: 'installed', totalRow: 'India (all)',
+                  drilldown: drilldownOn, bucketDrill: true });
+
+    if (!india || !india.activated) {
+      document.getElementById('speedFinding').innerHTML = '';
+      return;
+    }
+    // Where the curve has effectively finished: the first bucket edge by which
+    // 95% of everyone who ever activates has already done so.
+    let run = 0, reach = null;
+    data.buckets.forEach((b, bi) => {
+      run += india.counts[bi];
+      if (reach === null && run / india.activated >= 0.95) reach = b.hi;
+    });
+    const first = india.counts[0];
+    document.getElementById('speedFinding').innerHTML =
+      '<strong>' + fmtPct(pct(first, india.activated)) + '</strong> of activations land ' +
+      'by installation day itself, and <strong>' + fmtPct(pct(run, india.activated)) +
+      '</strong> by day ' + data.buckets[data.buckets.length - 1].hi + '.' +
+      (reach !== null
+        ? ' <strong>95%</strong> are in by <strong>day ' + reach + '</strong> &mdash; ' +
+          'the window beyond that is buying almost nothing.'
+        : '');
+  },
+
   /* One cluster, every metric, month by month -- and who on the ground owns it. */
   deepdive(idx) {
     const clusters = AGG.countsBy(idx, 'branch');
@@ -665,6 +770,13 @@ function render() {
   if (F.state.size) bits.push(F.state.size === 1 ? [...F.state][0] : F.state.size + ' states');
   if (F.branch.size) bits.push(F.branch.size === 1 ? [...F.branch][0] : F.branch.size + ' clusters');
   document.getElementById('filterSummary').textContent = bits.join(' · ');
+
+  // The window is not a filter -- it changes what the numbers MEAN -- so it is
+  // stamped in the top bar, not folded into the filter summary.
+  const wb = document.getElementById('winBadge');
+  wb.hidden = windowIsDefault();
+  wb.textContent = 'Window ' + WIN.start + ' to +' + WIN.end + 'd' +
+                   (WIN.capAtCommissioning ? '' : ', no commissioning cap');
 
   document.getElementById('footMeta').textContent =
     fmtInt(idx.length) + ' of ' + fmtInt(DS.n) + ' installed customers in view' +

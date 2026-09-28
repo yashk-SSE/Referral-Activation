@@ -41,6 +41,7 @@ PUBLIC_COLUMNS = [
     "first_timing_bucket", "first_tat_from_hoto",
     "referrals_total", "referrals_converted", "months_to_first_referral",
     "days_to_first_referral", "pre_install_referrer", "maturity_months",
+    "commissioning_offset",
     # Deliberate exception to the "no identity in public" rule: the City Deep
     # Dive tab filters and ranks Solar Consultants by name, which is the whole
     # point of that view for the Sales team. The NAME only -- sc_email stays
@@ -127,6 +128,43 @@ def encode_columns(df: pd.DataFrame) -> dict:
                 "v": [None if x is None else index[x] for x in s],
             }
     return out
+
+
+def encode_referrals(base: pd.DataFrame, ref: pd.DataFrame) -> dict:
+    """Every referral's day-offset from its own customer's installation.
+
+    This is what makes the activation window configurable in the browser. The
+    ETL no longer owns the window: it ships the raw offsets and the dashboard
+    re-derives activation, leads, orders and the sub-window buckets for whatever
+    range the user picks.
+
+    Laid out CSR-style -- one flat array per field, plus a per-customer count --
+    rather than an array of arrays per customer. Same numbers, roughly a third
+    of the JSON, and the browser can walk it with typed arrays.
+
+    Row order matches `base`, which is the order the columns are encoded in, so
+    customer i owns the slice starting at sum(count[:i]).
+    """
+    order = {cid: i for i, cid in enumerate(base["customer_id"])}
+    r = ref[ref["referrer_customer_id"].isin(order)
+            & ref["days_from_install"].notna()].copy()
+    r["_row"] = r["referrer_customer_id"].map(order)
+    # Ordered within each customer so "first referral" means the same thing here
+    # as it does everywhere else -- by timestamp, tie-broken on id.
+    r = r.sort_values(["_row", "referral_ts", "referral_id"], kind="mergesort")
+
+    levels = list(T.SUB_CHANNELS)
+    sub_ix = {s: i for i, s in enumerate(levels)}
+    other = len(levels)
+    counts = (r.groupby("_row").size()
+              .reindex(range(len(base)), fill_value=0).astype(int))
+    return {
+        "count": counts.tolist(),
+        "day": [int(x) for x in r["days_from_install"]],
+        "conv": [1 if bool(x) else 0 for x in r["is_converted"]],
+        "sub": [sub_ix.get(x, other) for x in r["sub_channel"]],
+        "sub_levels": levels + ["(unmapped)"],
+    }
 
 
 def stamp_assets() -> None:
@@ -237,8 +275,11 @@ def main() -> int:
             shipped[col] = pd.to_datetime(shipped[col], errors="coerce").dt.strftime("%Y-%m-%d")
 
     print(f"\nWriting datasets (mode={args.mode}):")
+    refs = encode_referrals(base, ref_detail)
+    print(f"  referral offsets: {len(refs['day']):,} across {len(refs['count']):,} customers")
     write_json(os.path.join(DATA_DIR, "customers.json"),
-               {"n": int(len(shipped)), "columns": encode_columns(shipped)})
+               {"n": int(len(shipped)), "columns": encode_columns(shipped),
+                "referrals": refs})
     write_json(os.path.join(DATA_DIR, "aggregates.json"), {
         "summary": summary,
         "timing": T.timing_summary(base, ref_detail),
@@ -258,6 +299,9 @@ def main() -> int:
         "timing_buckets": T.TIMING_BUCKETS,
         "funnel_config": funnel["config"],
         "activation": {"start": act_cfg["start"], "end": act_cfg["end"]},
+        # Shipped so the browser can re-derive the sub-window buckets when the
+        # user moves the activation window -- the ETL no longer owns it.
+        "sub_windows": act_cfg.get("sub_windows", []),
         # Surfaced so the public dashboard can link to the domain-restricted
         # sheet that carries the identity columns it deliberately does not.
         "sheet_url": (f"https://docs.google.com/spreadsheets/d/{os.environ['GOOGLE_SHEET_ID']}"
