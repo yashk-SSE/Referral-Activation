@@ -272,25 +272,76 @@ These differ from the lifetime `is_referrer` / `is_successful_referrer` in
 Section 4, which ignore the window. Both are shipped; the Sales tracker uses
 the windowed ones.
 
-### Cx Recommended and IDV — placeholders
+### IDV — live, derived as Metabase card 5318
 
-Both are **structural placeholders**. `enabled: false` means the ETL queries no
-source and the dashboard renders a dash, **not a zero** — "we have no source"
-and "we did none" are different statements and a zero asserts the wrong one.
+**IDV is a reconnection meeting.** Source, matching card 5318 exactly so the
+dashboard and the card agree:
 
-When the source is agreed, set `enabled: true` and fill in `source`.
+```sql
+public.meeting_metrics_history
+WHERE meeting_type = 'reconnection_meeting'
+  meeting_schedule_date -> IDV Scheduled
+  meeting_done_date     -> IDV Done
+joined on sseid; one row per SSEID, chosen by latest updatedAt
+```
 
-Previously explored and deliberately **not** wired up, kept only as a starting
-point:
+It is an installation-day activity by measurement, not by name: of completed
+reconnection meetings against September installs, **35.5%** land exactly on the
+installation date, **28.7%** the day before, **79.7%** inside ±3 days.
 
-| Stage | Candidate | Note |
-|---|---|---|
-| Cx Recommended | `public.new_nps_response_live`, question `how_likely_are_you_to_recommend_solarsquare_to_a_friend_or_coll`, 0–10, joined on `sse_id` | 8.1% of the base had answered; 91.5% of those scored 9–10 |
-| IDV | `public.usertasks` key `SC_IDV_01` "Installation Day Visit" | went live Sept 2026, 4 records |
+**No date window**, by decision. Card 5318 applies none and this matches it, so
+roughly a fifth of counted meetings sit outside ±3 days and these counts are
+slightly broader than "installation day" read literally. A window, if wanted,
+belongs in `transform.py` next to the activation window it would have to agree
+with — not in the extract.
 
-If IDV is ever sourced from visits, note that **`public.user_slots_visits_visits`
-is dead** — 8,506 rows in 2023, 38,858 in 2024, 4,610 in 2025 and **nothing in
-2026**. `usertasks` is the current system.
+A customer counts as scheduled/done if **any** of their projects was. Both ship
+as booleans (`idv_scheduled`, `idv_done`) and appear as two separate columns.
+
+> **The programme only ramped in September 2026.** Coverage by install month:
+>
+> | Install month | Installs | IDV scheduled | IDV done |
+> |---|---|---|---|
+> | Jan–Aug 2026 | ~2.2–3.7k / month | **3.1 – 8.6%** | 1.1 – 3.9% |
+> | **Sep 2026** | 3,319 | **65.8%** | 12.1% |
+>
+> Near-zero IDV on older cohorts is **missing coverage, not missing visits**.
+> The dashboard's default view is the last three *complete* months, which today
+> is Jun–Aug — so IDV reads almost empty there. Widen to This month to see it.
+
+#### The known flaw, inherited deliberately
+
+`ROW_NUMBER() … ORDER BY updatedAt DESC` takes the **most recently updated**
+meeting, which is not the same as the one that was completed. Across all 10,241
+SSEIDs with a reconnection meeting, it reports **no done date for 670 that do
+have a completed meeting** — a reschedule or a comment can promote an empty row
+over the completed one. On recent installs the cost is far smaller (12 of 401
+on September) because those customers usually have only one meeting.
+
+Picking the meeting **nearest the installation date** would be the honest rule.
+It is not done here because it would stop matching the card the team reads.
+Change both together or not at all.
+
+`meeting_done_date` capture is also uneven by cluster — Gurgaon and Delhi
+recorded zero completions on 205 scheduled meetings in September — so **IDV Done
+is a floor, not a count**, and is not comparable across clusters. IDV Scheduled
+is the trustworthy column.
+
+### Cx Recommended — still a placeholder
+
+`enabled: false` means the ETL queries no source and the dashboard renders a
+dash, **not a zero** — "we have no source" and "we did none" are different
+statements and a zero asserts the wrong one.
+
+Explored and not wired up: `public.new_nps_response_live`, question
+`how_likely_are_you_to_recommend_solarsquare_to_a_friend_or_coll`, 0–10, joined
+on `sse_id`. 8.1% of the base had answered; 91.5% of those scored 9–10.
+
+Rejected IDV alternatives, for the record: `public.usertasks` key `SC_IDV_01`
+"Installation Day Visit" has **45 rows in total**; `meeting_type = 'site_visit'`
+covers 1,611 SSEIDs against reconnection's 10,241; and
+`public.user_slots_visits_visits` is **dead** — 8,506 rows in 2023, 38,858 in
+2024, 4,610 in 2025 and nothing in 2026.
 
 ---
 

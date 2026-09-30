@@ -258,7 +258,7 @@ def attach_funnel(
         nps = None
     if not cfg.get("idv", {}).get("enabled"):
         base["idv_done"] = pd.NA
-        base["idv_count"] = pd.NA
+        base["idv_scheduled"] = pd.NA
         idv = None
     if nps is None and idv is None:
         return base
@@ -287,13 +287,15 @@ def _attach_funnel_live(
     rec_cfg = cfg.get("cx_recommended", {})
     idv_cfg = cfg.get("idv", {})
     min_score = rec_cfg.get("min_score", 9)
-    days_before = idv_cfg.get("days_before", 3)
-    days_after = idv_cfg.get("days_after", 3)
 
     # --- Cx Recommended -----------------------------------------------------
-    base["nps_answered"] = False
-    base["cx_recommended"] = False
-    base["nps_score"] = pd.NA
+    # Only claim False when there IS a source. With one stage live and the other
+    # not, this used to overwrite the disabled stage's nulls with False, and the
+    # dashboard would render a confident 0 for something nobody has measured.
+    if nps is not None:
+        base["nps_answered"] = False
+        base["cx_recommended"] = False
+        base["nps_score"] = pd.NA
     if nps is not None and not nps.empty and "install_id" in installs.columns:
         scored = installs[["customer_id", "install_id"]].merge(
             nps[["install_id", "nps_score"]], on="install_id", how="inner")
@@ -304,22 +306,33 @@ def _attach_funnel_live(
         base["cx_recommended"] = base["nps_score"] >= min_score
 
     # --- IDV ----------------------------------------------------------------
-    base["idv_done"] = False
-    base["idv_count"] = 0
-    if idv is not None and not idv.empty:
+    # Keyed on SSEID, and the extract already reduces to one row per SSEID. The
+    # base is per CUSTOMER, so a customer counts as scheduled/done if any of
+    # their projects was -- in practice almost every customer has one.
+    #
+    # No date window, matching card 5318: a meeting counts whenever it happened.
+    # That is why there is no comparison against first_install_date here.
+    if idv is not None:
+        base["idv_scheduled"] = False
+        base["idv_done"] = False
+    if idv is not None and not idv.empty and "install_id" in installs.columns:
         v = idv.copy()
-        v["visit_date"] = _to_date(v["visit_date"])
-        v = v.dropna(subset=["visit_date", "customer_id"])
-        v["customer_id"] = v["customer_id"].astype(str)
-        v = v.merge(base[["customer_id", "first_install_date"]], on="customer_id", how="inner")
-        delta = (v["visit_date"] - v["first_install_date"]).dt.days
-        v = v[(delta >= -days_before) & (delta <= days_after)]
-        if not v.empty:
-            counts = v.groupby("customer_id", as_index=False).agg(
-                idv_count=("visit_id", "nunique"))
-            base = base.drop(columns=["idv_count"]).merge(counts, on="customer_id", how="left")
-            base["idv_count"] = base["idv_count"].fillna(0).astype(int)
-            base["idv_done"] = base["idv_count"] > 0
+        v["install_id"] = v["install_id"].astype(str).str.strip()
+        v["idv_scheduled_date"] = _to_date(v["idv_scheduled_date"])
+        v["idv_done_date"] = _to_date(v["idv_done_date"])
+
+        link = installs[["customer_id", "install_id"]].copy()
+        link["install_id"] = link["install_id"].astype(str).str.strip()
+        hit = link.merge(v, on="install_id", how="inner")
+        if not hit.empty:
+            per_cust = hit.groupby("customer_id", as_index=False).agg(
+                _sched=("idv_scheduled_date", lambda c: c.notna().any()),
+                _done=("idv_done_date", lambda c: c.notna().any()),
+            )
+            base = base.merge(per_cust, on="customer_id", how="left")
+            base["idv_scheduled"] = base["_sched"].fillna(False).astype(bool)
+            base["idv_done"] = base["_done"].fillna(False).astype(bool)
+            base = base.drop(columns=["_sched", "_done"])
 
     return base
 

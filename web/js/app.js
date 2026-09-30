@@ -345,7 +345,7 @@ function buildFilters() {
   });
   document.getElementById('momAll').addEventListener('click', () => {
     MOM.hidden.clear();
-    MOM.collapsed = new Set(['idv_sched', 'idv_done']);
+    MOM.collapsed = new Set();
     chips.querySelectorAll('.chip').forEach(c => c.classList.add('on'));
     render();
   });
@@ -436,7 +436,8 @@ function matrixRows() {
     { section: 'Base' },
     { label: 'Installed base', get: t => t.installed, metric: 'installed', strong: true },
     { label: 'Cx Recommended', get: t => t.cx_recommended, metric: 'cx_recommended' },
-    { label: 'IDV visits', get: t => t.idv, metric: 'idv' },
+    { label: 'IDV Scheduled', get: t => t.idv_scheduled, metric: 'idv_scheduled' },
+    { label: 'IDV Done', get: t => t.idv, metric: 'idv' },
     { section: 'Activation' },
     { label: 'Referrer activation', get: t => t.referrer_activated,
       metric: 'referrer_activated', strong: true },
@@ -466,14 +467,16 @@ function matrixRows() {
 /* ---------------------------------------------------------------------- */
 /* MoM by Cluster: which columns are showing, folded, and how rates print.
  *
- * IDV starts folded because it has no source wired up yet -- the column should
- * be visible as a column without spending four cells on dashes. */
+ * Nothing starts folded now that IDV carries data; any column still folds on a
+ * click when the grid gets too wide to read. */
+const IDV_TIP = 'Reconnection meeting in meeting_metrics_history, one row per SSEID by latest updatedAt -- exactly Metabase card 5318, with no date window. The programme ramped in September 2026, so older months read near zero through lack of coverage, not lack of visits.';
+
 const SPEED = { dim: 'cohort_month', asPct: false };
 
 const MOM = {
   asPct: true,
   hidden: new Set(),
-  collapsed: new Set(['idv_sched', 'idv_done'])
+  collapsed: new Set()
 };
 
 const MOM_GROUPS = [
@@ -516,7 +519,12 @@ const PANELS = {
       'Click any number to download those customers.';
     note.title = 'The window is set in the filter bar. Referrals before it are a ' +
       'blindspot and count nowhere on this page. Downloads carry the filters and ' +
-      'the active window; turn Click-to-download off to browse without files.';
+      'the active window; turn Click-to-download off to browse without files. ' +
+      'IDV is a reconnection meeting, derived exactly as Metabase card 5318 does ' +
+      'it, with no date window. The programme only ramped in September 2026: ' +
+      '66% of September installs have one scheduled against 3-9% for January to ' +
+      'August, so near-zero IDV on older months is missing coverage, not missing ' +
+      'visits.';
 
     // Cluster is the ops accountability unit and matches the Cluster filter.
     const rows = AGG.cityTable(idx, 'branch');
@@ -526,7 +534,8 @@ const PANELS = {
       { key: 'name', label: 'Cluster' },
       numCol('installed', 'Installed base'),
       numCol('cx_recommended', 'Cx Recommended'),
-      numCol('idv', 'IDV visits'),
+      { ...numCol('idv_scheduled', 'IDV Scheduled'), tip: IDV_TIP },
+      { ...numCol('idv', 'IDV Done'), tip: IDV_TIP },
       numCol('referrer_activated', 'Referrer activation', 'referrer_activated'),
       pctCol('activation_rate', 'Act %'),
       numCol('successful_activated', 'Orders activation', 'successful_activated'),

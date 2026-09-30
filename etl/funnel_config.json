@@ -29,9 +29,19 @@
     "    cx_recommended  public.new_nps_response_live, question",
     "                    how_likely_are_you_to_recommend_solarsquare_to_a_friend_or_coll,",
     "                    0-10, joined on sse_id = project.sseid",
-    "    idv             public.usertasks key SC_IDV_01 'Installation Day Visit',",
-    "                    live Sept 2026. NOTE public.user_slots_visits_visits is",
-    "                    dead -- nothing at all in 2026."
+    "    idv             NOW WIRED UP -- see sql/04_idv.sql. It is a",
+    "                    RECONNECTION MEETING in meeting_metrics_history, one row",
+    "                    per SSEID by latest updatedAt, exactly as card 5318.",
+    "",
+    "  IDV WINDOW: deliberately none, matching card 5318. About a fifth of the",
+    "  meetings counted sit outside +/-3 days of the installation, so these are",
+    "  slightly broader than 'installation day' read literally. If a window is",
+    "  wanted later it belongs in transform.py, next to the activation window it",
+    "  would have to agree with -- not in the extract.",
+    "",
+    "  Rejected alternatives: usertasks key SC_IDV_01 has 45 rows in total;",
+    "  meeting_type 'site_visit' covers 1,611 SSEIDs against",
+    "  reconnection_meeting's 10,241; user_slots_visits_visits is dead."
   ],
 
   "activation": {
@@ -52,10 +62,11 @@
   },
 
   "idv": {
-    "enabled": false,
-    "source": null,
+    "enabled": true,
+    "source": "meeting_metrics_history, meeting_type='reconnection_meeting', one row per SSEID by latest updatedAt -- exactly as Metabase card 5318",
+    "window": null,
     "task_keys": [],
-    "days_before": 3,
-    "days_after": 3
+    "days_before": null,
+    "days_after": null
   }
 }

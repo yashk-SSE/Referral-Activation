@@ -1,32 +1,54 @@
--- Extract D: Installation Day Visit task completions, one row per completion.
+-- Extract D: Installation Day Visit, keyed on SSEID.
 --
--- Visits used to live in public.user_slots_visits_visits, but that table is
--- dead -- 8.5k rows in 2023, 38.9k in 2024, 4.6k in 2025 and NOTHING in 2026.
--- Visits are now usertasks, which is current (3.8M completions in 2026).
+-- Derived exactly as Metabase card 5318 does it, so the dashboard and the card
+-- agree. IDV is a RECONNECTION MEETING in public.meeting_metrics_history:
 --
--- SC_IDV_01 is the task literally described "Installation Day Visit". It was
--- created in September 2026, so it is near-empty until adoption picks up. The
--- key list is injected from etl/funnel_config.json so it can be widened (046
--- "Visit site for quality audit" and NM015 "Conduct Pre-commissioning Site
--- Visit" are the nearest higher-volume alternatives) without editing SQL.
+--     meeting_type          = 'reconnection_meeting'
+--     meeting_schedule_date -> IDV scheduled
+--     meeting_done_date     -> IDV done
 --
--- The +/- day window is NOT applied here. Visit dates are returned raw and the
--- window is applied in transform.py, so the configured window is honoured in
--- one place rather than baked into an extract.
+-- That it really is an installation-day activity is empirical, not naming: of
+-- completed reconnection meetings against September installs, 35.5% land
+-- exactly on the installation date, 28.7% the day before, and 79.7% inside
+-- +/-3 days.
 --
--- usertasks has no sseid, so it joins on project._id.
--- timeCompleted is epoch milliseconds as text; '-1.0' means not completed.
+-- NO DATE WINDOW is applied, by decision -- this matches card 5318, which takes
+-- whichever meeting it picks regardless of when it happened relative to the
+-- installation. About a fifth of meetings sit outside +/-3 days, so these
+-- counts are slightly broader than "installation day" taken literally. If a
+-- window is wanted later, add it in transform.py rather than here, so it lives
+-- next to the activation window it would need to agree with.
+--
+-- ONE MEETING PER SSEID, chosen by latest updatedAt, again matching 5318. This
+-- is deliberately faithful rather than better: taking the LATEST-UPDATED row
+-- is not the same as taking the one that was completed, and across all 10,241
+-- SSEIDs with a reconnection meeting it reports no done date for 670 that do
+-- have a completed meeting. On recent installs the cost is much smaller (12 of
+-- 401 on September), because those customers usually have only one meeting.
+-- Picking the meeting NEAREST INSTALLATION would be the honest rule; it would
+-- also stop matching the card the team reads, so it is not done here.
+--
+-- meeting_schedule_date / meeting_done_date are already timestamptz, so they
+-- take a SINGLE conversion to IST. The varchar recipe used on referrals
+-- (CAST -> AT TIME ZONE 'UTC' -> AT TIME ZONE 'Asia/Kolkata') would shift these
+-- twice and land them 5h30m out.
 
+WITH picked AS (
+    SELECT
+        NULLIF(TRIM(m."sseid"), '')                          AS sseid,
+        m."meeting_schedule_date"                            AS scheduled_at,
+        m."meeting_done_date"                                AS done_at,
+        ROW_NUMBER() OVER (
+            PARTITION BY NULLIF(TRIM(m."sseid"), '')
+            ORDER BY m."updatedAt" DESC NULLS LAST
+        )                                                    AS rn
+    FROM public.meeting_metrics_history m
+    WHERE m."meeting_type" = 'reconnection_meeting'
+      AND NULLIF(TRIM(m."sseid"), '') IS NOT NULL
+)
 SELECT
-    u."_id"                                                 AS visit_id,
-    p."sseid"                                               AS install_id,
-    p."prospectId"                                          AS customer_id,
-    u."key"                                                 AS task_key,
-    (to_timestamp(NULLIF(u."timeCompleted", '-1.0')::numeric / 1000)
-        AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date
-                                                            AS visit_date
-FROM public.usertasks u
-JOIN public.project p ON p."_id" = u."parameters_projectId"
-WHERE u."key" IN ({idv_keys})
-  AND NULLIF(u."timeCompleted", '-1.0') IS NOT NULL
-  AND NULLIF(TRIM(p."prospectId"), '') IS NOT NULL
+    sseid                                                    AS install_id,
+    (scheduled_at AT TIME ZONE 'Asia/Kolkata')::date         AS idv_scheduled_date,
+    (done_at      AT TIME ZONE 'Asia/Kolkata')::date         AS idv_done_date
+FROM picked
+WHERE rn = 1

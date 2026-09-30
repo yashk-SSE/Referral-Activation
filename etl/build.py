@@ -33,7 +33,7 @@ PUBLIC_COLUMNS = [
     "cohort_month", "first_install_date", "state", "city", "branch", "capacity_band",
     "install_count", "capacity_kw", "order_value",
     "is_referrer", "is_successful_referrer", "activated_by",
-    "nps_answered", "cx_recommended", "idv_done",
+    "nps_answered", "cx_recommended", "idv_done", "idv_scheduled",
     "referrer_activated", "successful_activated", "leads_in_window",
     "orders_in_window", "activated_by_window", "activation_window",
     "days_to_activation",
@@ -90,16 +90,15 @@ def fetch_live(lookback_months: int, funnel_cfg: dict) -> tuple[pd.DataFrame, ..
     print(f"  cx recommended: {len(nps):,} rows"
           f"{'' if funnel_cfg.get('cx_recommended', {}).get('enabled') else '  (placeholder, not queried)'}")
 
-    keys = funnel_cfg.get("idv", {}).get("task_keys", [])         if funnel_cfg.get("idv", {}).get("enabled") else []
+    idv_on = bool(funnel_cfg.get("idv", {}).get("enabled"))
     idv = pd.DataFrame()
-    if keys:
-        quoted = ", ".join("'" + str(k).replace("'", "''") + "'" for k in keys)
+    if idv_on:
         idv = pd.DataFrame(
             mb.query_file(os.path.join(SQL_DIR, "04_idv.sql"), db_id,
-                          key="visit_id", idv_keys=quoted)
+                          key="install_id")
         )
-    print(f"  idv visits:     {len(idv):,} rows"
-          f"{'' if keys else '  (placeholder, not queried)'}")
+    print(f"  idv meetings:   {len(idv):,} rows"
+          f"{'' if idv_on else '  (placeholder, not queried)'}")
     return installs, referrals, nps, idv
 
 

@@ -114,6 +114,7 @@ minutes.
 
 | field | definition |
 |---|---|
+| `idv_scheduled` / `idv_done` | reconnection meeting scheduled / completed for any of the customer's SSEIDs, no date window — see `sql/04_idv.sql` |
 | `cohort_month` | month of first installation — the column grain of the City Deep Dive matrix |
 | `is_referrer` | ≥ 1 referral, lifetime |
 | `activated_by` | Sub-Channel of the **first** referral, lifetime |

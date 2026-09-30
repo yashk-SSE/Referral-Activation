@@ -90,7 +90,9 @@ function renderTable(elId, columns, rows, opts) {
   columns.forEach(c => { if (c.bar) maxes[c.key] = Math.max(...rows.map(r => r[c.key] || 0), 1); });
 
   const head = columns.map(c =>
-    `<th class="${c.num ? 'num' : ''}" data-key="${c.key}">${c.label}${state.key === c.key ? (state.dir < 0 ? ' ▾' : ' ▴') : ''}</th>`
+    `<th class="${c.num ? 'num' : ''}" data-key="${c.key}"` +
+    (c.tip ? ` title="${escAttr(c.tip)}"` : '') +
+    `>${c.label}${state.key === c.key ? (state.dir < 0 ? ' ▾' : ' ▴') : ''}</th>`
   ).join('');
 
   const body = sorted.map(r => {
