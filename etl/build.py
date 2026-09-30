@@ -31,6 +31,7 @@ SQL_DIR = os.path.join(ROOT, "sql")
 # Columns shipped to the browser at row level, by privacy tier.
 PUBLIC_COLUMNS = [
     "cohort_month", "first_install_date", "state", "city", "branch", "capacity_band",
+    "sales_channel",
     "install_count", "capacity_kw", "order_value",
     "is_referrer", "is_successful_referrer", "activated_by",
     "nps_answered", "cx_recommended", "idv_done", "idv_scheduled",

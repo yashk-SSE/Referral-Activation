@@ -463,7 +463,7 @@ def build_customer_base(
         capacity_kw=("capacity_kw", "sum"),
         order_value=("order_value", "sum"),
     )
-    attrs = [c for c in ("install_id", "state", "city", "branch",
+    attrs = [c for c in ("install_id", "state", "city", "branch", "sales_channel",
                          "hoto_date", "commissioning_date",
                          "customer_name", "order_booked_date", "sc_name", "sc_email",
                          "installation_champion", "installation_champion_email")

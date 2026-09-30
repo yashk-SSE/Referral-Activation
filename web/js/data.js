@@ -200,6 +200,11 @@ function applyFilters(f) {
   };
   const stateS = codeSet('state', f.state);
   const branchS = codeSet('branch', f.branch);
+  // Channel is a single choice, not a set: '' means every channel, including
+  // the older installs where the flag was never set.
+  const chanCol = DS.cols.sales_channel;
+  const chanCode = (f.channel && chanCol) ? chanCol.levels.indexOf(f.channel) : -1;
+  const wantChan = !!(f.channel && chanCol);
 
   for (let i = 0; i < DS.n; i++) {
     if (dates && (f.from || f.to)) {
@@ -211,6 +216,7 @@ function applyFilters(f) {
     }
     if (stateS && !stateS.has(DS.cols.state.v[i])) continue;
     if (branchS && !branchS.has(DS.cols.branch.v[i])) continue;
+    if (wantChan && chanCol.v[i] !== chanCode) continue;
     out.push(i);
   }
   return out;

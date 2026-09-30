@@ -23,6 +23,7 @@ One row per installed project.
 | `hoto_date` | `lead.cx_approval_timestamp` | |
 | `commissioning_date` | `project.commissioning_date` | only truncates the post-install windows |
 | `sc_name` / `sc_email` | `lead.assigned_sc` → `users` | the Solar Consultant on the customer's order |
+| `sales_channel` | `lead.is_inside_sales` | 'Field Sales' / 'Inside Sales'; NULL on installs predating the flag |
 | `state` / `city` / `branch` | `site_address_state` / `_city` / `_cluster` | |
 | `capacity_kw` | `project_size_kw` | |
 | `order_value` | `total_price` | |

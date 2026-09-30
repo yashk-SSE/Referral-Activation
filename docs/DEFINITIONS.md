@@ -345,6 +345,31 @@ covers 1,611 SSEIDs against reconnection's 10,241; and
 
 ---
 
+## 5b-ii. Channel — Field Sales vs Inside Sales
+
+`lead.is_inside_sales` on the customer's own lead, carried onto the base as
+`sales_channel`:
+
+| value | reads as |
+|---|---|
+| `'false'` | **Field Sales** |
+| `'true'` | **Inside Sales** |
+| `NULL` | not classified |
+
+The filter bar's **All / Field / Inside** switch applies to every tab and every
+download, and the chosen channel appears in the filter summary.
+
+**Field + Inside does not equal All**, and that is deliberate. The flag is NULL
+on installs that predate it — 12,223 across the 24-month base, but under **3.3%
+of any 2026 month and falling** (0.8% in September). Those customers appear only
+under *All*; neither named option claims a customer nobody classified. On
+September 2026 installs: 2,977 Field, 318 Inside, 27 unset, 3,322 total.
+
+Inside Sales is roughly **10% of recent installs** and growing — 4.5% in January
+against 9.6% in September.
+
+---
+
 ## 5c. Referrer Activation (tab 1)
 
 One row per **cluster** plus an **India (all)** total, over whatever the filters

@@ -16,6 +16,7 @@ const EXPORT_COLUMNS = [
   { key: 'install_id',                  label: 'SSEID' },
   { key: 'customer_name',               label: 'Name' },
   { key: 'branch',                      label: 'Cluster' },
+  { key: 'sales_channel',               label: 'Channel' },
   { key: 'city',                        label: 'City' },
   { key: 'state',                       label: 'State' },
   { key: 'order_booked_date',           label: 'Order Booked Date' },

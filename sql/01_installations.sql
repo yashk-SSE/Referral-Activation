@@ -65,6 +65,14 @@ SELECT
                                NULLIF(TRIM(sc_user."lastName"), ''))), '')
                                                      AS sc_name,
     NULLIF(TRIM(sc_user."emails"), '')               AS sc_email,
+    -- Field vs Inside Sales. The flag is text 'true'/'false', and NULL on older
+    -- installs that predate it -- 12.2k over 24 months, but under 3.3% of any
+    -- 2026 month and falling. NULL stays NULL rather than defaulting to Field:
+    -- the dashboard shows those only under "All channels", so the two named
+    -- options never claim customers nobody classified.
+    CASE l."is_inside_sales" WHEN 'true'  THEN 'Inside Sales'
+                             WHEN 'false' THEN 'Field Sales' END
+                                                     AS sales_channel,
     NULLIF(TRIM(CONCAT_WS(' ', NULLIF(TRIM(inst_user."firstName"), ''),
                                NULLIF(TRIM(inst_user."lastName"), ''))), '')
                                                      AS installation_champion,

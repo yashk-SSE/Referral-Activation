@@ -3,7 +3,8 @@
 
 const F = {
   from: null, to: null,          // ISO dates on the installation date
-  state: new Set(), branch: new Set()
+  state: new Set(), branch: new Set(),
+  channel: ''                    // '' = all, else 'Field Sales' | 'Inside Sales'
 };
 let activeTab = 'sales';
 let drilldownOn = true;
@@ -266,6 +267,21 @@ function buildFilters() {
     render();
   });
 
+  // --- channel -----------------------------------------------------------
+  // Hidden entirely if the build has no sales_channel column, rather than
+  // offering a control that silently does nothing.
+  const chanWrap = document.getElementById('fChannel');
+  if (!DS.has('sales_channel')) {
+    chanWrap.closest('.filter').hidden = true;
+  } else {
+    chanWrap.querySelectorAll('button').forEach(btn =>
+      btn.addEventListener('click', () => {
+        F.channel = btn.dataset.chan;
+        chanWrap.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === btn));
+        render();
+      }));
+  }
+
   // --- activation window -------------------------------------------------
   // Live: moving it re-derives activation, leads, orders and the sub-window
   // buckets for every tab at once, off the per-referral offsets in the payload.
@@ -352,6 +368,9 @@ function buildFilters() {
 
   document.getElementById('resetFilters').addEventListener('click', () => {
     F.state.clear(); F.branch.clear();
+    F.channel = '';
+    document.querySelectorAll('#fChannel button').forEach(b =>
+      b.classList.toggle('on', b.dataset.chan === ''));
     DD.cluster = ''; DD.sc.clear();
     setWindow(WIN.defStart, WIN.defEnd, true);
     syncWindow();
@@ -784,6 +803,7 @@ function render() {
   if (F.from) bits.push(F.from + ' to ' + F.to);
   if (F.state.size) bits.push(F.state.size === 1 ? [...F.state][0] : F.state.size + ' states');
   if (F.branch.size) bits.push(F.branch.size === 1 ? [...F.branch][0] : F.branch.size + ' clusters');
+  if (F.channel) bits.push(F.channel);
   document.getElementById('filterSummary').textContent = bits.join(' · ');
 
   // The window is not a filter -- it changes what the numbers MEAN -- so it is
