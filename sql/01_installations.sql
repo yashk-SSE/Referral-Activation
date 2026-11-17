@@ -34,6 +34,9 @@ WITH install_task AS (
 )
 SELECT
     p."sseid"                                        AS install_id,
+    -- The CRM id Sales works in. Ships in the PUBLIC build by decision, so the
+    -- drill-down file is actionable without the gated tier -- see docs/DEPLOY.md.
+    NULLIF(TRIM(l."lead_id"), '')                    AS lead_id,
     p."prospectId"                                   AS customer_id,
     (it.installation_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date
                                                      AS install_date,

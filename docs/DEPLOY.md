@@ -7,15 +7,19 @@
 > |---|---|---|
 > | Aggregates, charts, cluster table, City Deep Dive | yes | yes |
 > | Solar Consultant **name** (filter, ranking, CSV) | yes — deliberate exception | yes |
+> | **Lead ID** (drill-down CSV) | yes — deliberate exception | yes |
 > | Drill-down CSV | non-identifying columns only | **full sheet** |
 > | SSEID, customer name, SC **email**, Installation Champion | **omitted** | included |
 >
-> The one exception is `sc_name`. The City Deep Dive tab filters and ranks Solar
-> Consultants by name, which is the point of that view, so the name ships in the
-> public build and the workflow guard allows it by name. `sc_email` stays
-> blocked: a name is not a contactable identifier. **This does put named staff
-> performance on a world-readable URL** — that was an explicit call, and Stage 3
-> is how to take it back.
+> Two deliberate exceptions, both so the dashboard is usable without the gated
+> tier. **`sc_name`**: the City Deep Dive ranks Solar Consultants by name, which
+> is the point of that view. **`lead_id`**: without it a drill-down file has no
+> customer identifier at all and Sales cannot act on it. `sc_email`, SSEID and
+> customer name stay blocked, so nothing contactable ships.
+>
+> **This does put named staff performance and customer record IDs on a
+> world-readable URL.** Lead IDs are short and sequential, so they are
+> enumerable. Both were explicit calls, and Stage 3 is how to take them back.
 >
 > **GitHub Pages is world-readable — even from a private repo.** So the Pages
 > deployment must be `public`, and it is: the workflow builds `public` unless

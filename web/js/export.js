@@ -5,14 +5,16 @@
  * file always matches exactly what the filters were showing when it was
  * clicked.
  *
- * The identifying columns (SSEID, name, SC, Installation Champion) ship only in
- * gated mode. In public mode the build leaves them out entirely, so export
+ * Lead ID and SC name ship in every build, so a downloaded file is actionable.
+ * The rest (SSEID, customer name, Installation Champion) ship only in gated
+ * mode. In public mode the build leaves them out entirely, so export
  * degrades to the non-identifying columns and says so rather than emitting a
  * file full of blanks.
  */
 'use strict';
 
 const EXPORT_COLUMNS = [
+  { key: 'lead_id',                     label: 'Lead ID' },
   { key: 'install_id',                  label: 'SSEID' },
   { key: 'customer_name',               label: 'Name' },
   { key: 'branch',                      label: 'Cluster' },

@@ -43,6 +43,7 @@ DATA = os.path.join(ROOT, "web", "data", "customers.json")
 # Mirrors EXPORT_COLUMNS in web/js/export.js so the Sheet and the in-browser
 # download carry the same fields in the same order.
 COLUMNS = [
+    ("lead_id", "Lead ID"),
     ("install_id", "SSEID"),
     ("customer_name", "Name"),
     ("branch", "Cluster"),

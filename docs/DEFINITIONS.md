@@ -388,6 +388,7 @@ browser, so it always matches what was on screen.
 
 | Column | Source |
 |---|---|
+| Lead ID | `lead.lead_id` — ships in the public build, so the file is actionable |
 | SSEID | `project.sseid` |
 | Name | `project.customer_first/middle/last_name` |
 | Cluster / City / State | `project.site_address_cluster` / `_city` / `_state` |

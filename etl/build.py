@@ -43,11 +43,14 @@ PUBLIC_COLUMNS = [
     "referrals_total", "referrals_converted", "months_to_first_referral",
     "days_to_first_referral", "pre_install_referrer", "maturity_months",
     "commissioning_offset",
-    # Deliberate exception to the "no identity in public" rule: the City Deep
-    # Dive tab filters and ranks Solar Consultants by name, which is the whole
-    # point of that view for the Sales team. The NAME only -- sc_email stays
-    # gated, so the public build carries no contactable identifier.
-    "sc_name",
+    # Two deliberate exceptions to the "no identity in public" rule, both so the
+    # dashboard is usable without the gated tier:
+    #   sc_name   the City Deep Dive ranks Solar Consultants by name. The NAME
+    #             only -- sc_email stays gated, so nothing contactable ships.
+    #   lead_id   the CRM id Sales works in, so a drill-down file can be acted
+    #             on. Short and sequential, and it carries no name, phone or
+    #             address; SSEID and customer_name stay gated.
+    "sc_name", "lead_id",
 ]
 # Drill-down fields. These carry customer and employee identity, so they ship
 # only in gated mode -- see docs/DEPLOY.md before publishing with them on.

@@ -575,8 +575,8 @@ const PANELS = {
         ' leads and ' + fmtInt(india.orders) + ' orders. <strong>' +
         fmtInt(india.not_referred) + '</strong> have not referred.' +
         (missing.length
-          ? ' <em>Downloads exclude customer identity &mdash; this build is in ' +
-            'public mode. Rebuild with <code>--mode gated</code> for the full sheet.</em>'
+          ? ' <em>Downloads carry Lead ID; SSEID, customer name and Installation ' +
+            'Champion need a <code>--mode gated</code> build.</em>'
           : '')
       : '';
 
