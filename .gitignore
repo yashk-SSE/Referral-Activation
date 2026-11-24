@@ -26,7 +26,7 @@ docs/schema_db*.json
 # Ad-hoc exports -- these carry customer and staff identity.
 reports/
 
-# Ad-hoc calling-list queries. These hardcode real SSEIDs in a VALUES block and
-# select customer names -- publishing one to a public repo publishes the list.
-sql/05_calling_ids_referral_detail.sql
-sql/*_calling_*.sql
+# Ad-hoc, one-off queries. Some hardcode real SSEIDs in a VALUES block and
+# select customer names, so publishing one to a public repo publishes the list.
+# The numbered sql/0N_*.sql files ARE tracked -- those are the pipeline.
+sql/adhoc/*.sql

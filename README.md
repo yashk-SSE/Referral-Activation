@@ -16,7 +16,7 @@ Metabase ──(read-only key, GitHub Secrets)──▶ GitHub Actions, daily 06
                                                         │
                                               etl/ runs SQL, derives cohorts
                                                         ▼
-                                              web/data/*.json  (~100-300 KB)
+                                              web/data/*.json  (~9 MB, ~1 MB gzipped)
                                                         │
                                               GitHub Pages (static hosting)
                                                         ▼
@@ -29,10 +29,22 @@ Two design decisions worth knowing:
 anything it uses to call Metabase is visible in DevTools. So the key stays in
 GitHub Secrets, the Action queries Metabase, and only derived JSON is published.
 
-**Every cut is computed in the browser from one row set.** Filters reshape both
-tabs at once and the cuts cannot drift apart, because they all derive from the
-same rows — and from one `statsFor()` in `web/js/data.js`. At ~47k customers
+**Every cut is computed in the browser from one row set.** Filters reshape all
+four tabs at once and the cuts cannot drift apart, because they all derive from the
+same rows — and from one `statsFor()` in `web/js/data.js`. At ~53k customers
 this is a few milliseconds of work.
+
+---
+
+## Taking this over?
+
+Start with **[HANDOVER.md](HANDOVER.md)** — access you need, the decisions and
+why, the traps, and what is unfinished. Read its first section before sharing
+this folder: `.env` holds a live Metabase key and `reports/` holds customer
+data, and both are gitignored, so they travel with a folder copy while staying
+invisible in git.
+
+If you work with Claude Code, **[CLAUDE.md](CLAUDE.md)** is its context file.
 
 ---
 
@@ -54,10 +66,10 @@ python etl/build.py --sample
 Then start the local server — double-click `serve.bat`, or:
 
 ```bash
-python -m http.server 8765 --directory web
+python -m http.server 8771 --directory web
 ```
 
-Open <http://localhost:8765>. Opening `web/index.html` directly from disk will
+Open <http://localhost:8771>. Opening `web/index.html` directly from disk will
 not work: the page loads its data with `fetch()`, which browsers block on
 `file://` URLs. The header shows a **SAMPLE DATA** badge so
 synthetic numbers can never be mistaken for real ones.
